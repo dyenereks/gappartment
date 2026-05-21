@@ -15,7 +15,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { title, description, amount, month } = body;
+  const { title, description, amount, month, markMyShareAsPaid } = body;
 
   if (!title || !amount || !month) {
     return new NextResponse("Missing required fields", { status: 400 });
@@ -35,6 +35,35 @@ export async function PATCH(
       where: { expenseId: id },
       data: { amount: shareAmount },
     });
+
+    // Toggle the requesting user's own share paid state, if requested
+    if (markMyShareAsPaid !== undefined) {
+      const myShare = expense.shares.find((s) => s.userId === userId);
+      if (myShare) {
+        const currentlyPaid = myShare.isPaid;
+        if (markMyShareAsPaid && !currentlyPaid) {
+          await tx.expenseShare.update({
+            where: { id: myShare.id },
+            data: {
+              isPaid: true,
+              paidAt: new Date(),
+              confirmedAt: new Date(),
+              confirmedById: userId,
+            },
+          });
+        } else if (!markMyShareAsPaid && currentlyPaid) {
+          await tx.expenseShare.update({
+            where: { id: myShare.id },
+            data: {
+              isPaid: false,
+              paidAt: null,
+              confirmedAt: null,
+              confirmedById: null,
+            },
+          });
+        }
+      }
+    }
 
     return tx.expense.update({
       where: { id },

@@ -29,9 +29,9 @@ export async function PATCH(
 
   const updated = await prisma.$transaction(async (tx) => {
     if (shares && Array.isArray(shares)) {
-      const incomingShares = shares as { userId: string; amount: number }[];
+      const incomingShares = shares as { userId: string; amount: number; isPaid?: boolean }[];
       const incomingIds = new Set(incomingShares.map((s) => s.userId));
-      const existingIds = new Set(bill.shares.map((s) => s.userId));
+      const existingById = new Map(bill.shares.map((s) => [s.userId, s]));
 
       // Delete shares for removed tenants
       const toDelete = bill.shares
@@ -43,14 +43,42 @@ export async function PATCH(
 
       // Update existing or create new shares
       for (const s of incomingShares) {
-        if (existingIds.has(s.userId)) {
+        const existing = existingById.get(s.userId);
+
+        // Resolve paid-state transitions only when isPaid is explicitly provided
+        let paidFields: Record<string, unknown> = {};
+        if (s.isPaid !== undefined) {
+          const currentlyPaid = existing?.isPaid ?? false;
+          if (s.isPaid && !currentlyPaid) {
+            paidFields = {
+              isPaid: true,
+              paidAt: new Date(),
+              confirmedAt: new Date(),
+              confirmedById: userId,
+            };
+          } else if (!s.isPaid && currentlyPaid) {
+            paidFields = {
+              isPaid: false,
+              paidAt: null,
+              confirmedAt: null,
+              confirmedById: null,
+            };
+          }
+        }
+
+        if (existing) {
           await tx.billShare.updateMany({
             where: { billId: id, userId: s.userId },
-            data: { amount: s.amount },
+            data: { amount: s.amount, ...paidFields },
           });
         } else {
           await tx.billShare.create({
-            data: { billId: id, userId: s.userId, amount: s.amount },
+            data: {
+              billId: id,
+              userId: s.userId,
+              amount: s.amount,
+              ...paidFields,
+            },
           });
         }
       }

@@ -337,6 +337,7 @@ export default function BillsPage() {
         onSuccess={fetchData}
         bill={editBill}
         users={users}
+        currentUserId={userId ?? ""}
       />
 
       {payModal && (

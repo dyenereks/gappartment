@@ -12,6 +12,7 @@ interface User {
 interface BillShare {
   id: string;
   amount: number;
+  isPaid: boolean;
   user: { id: string; name: string; nickname?: string | null };
 }
 
@@ -32,6 +33,7 @@ interface EditBillModalProps {
   onSuccess: () => void;
   bill: Bill | null;
   users: User[];
+  currentUserId: string;
 }
 
 export default function EditBillModal({
@@ -40,6 +42,7 @@ export default function EditBillModal({
   onSuccess,
   bill,
   users,
+  currentUserId,
 }: EditBillModalProps) {
   const [type, setType] = useState("RENT");
   const [amount, setAmount] = useState("");
@@ -50,6 +53,8 @@ export default function EditBillModal({
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [splitMode, setSplitMode] = useState<"equal" | "custom">("equal");
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
+  const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
+  const [myShareWasPaid, setMyShareWasPaid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,8 +82,14 @@ export default function EditBillModal({
       } else {
         setSplitMode("equal");
       }
+
+      // Pre-fill "mark my share paid" from current state
+      const myShare = bill.shares.find((s) => s.user.id === currentUserId);
+      const wasPaid = myShare?.isPaid ?? false;
+      setMyShareWasPaid(wasPaid);
+      setMarkMyShareAsPaid(wasPaid);
     }
-  }, [bill]);
+  }, [bill, currentUserId]);
 
   const totalAmount = parseFloat(amount) || 0;
   const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
@@ -110,7 +121,7 @@ export default function EditBillModal({
       return;
     }
 
-    let shares: { userId: string; amount: number }[];
+    let shares: { userId: string; amount: number; isPaid?: boolean }[];
     if (splitMode === "equal") {
       shares = selectedUsers.map((u) => ({ userId: u.id, amount: equalShare }));
     } else {
@@ -125,6 +136,17 @@ export default function EditBillModal({
         userId: u.id,
         amount: parseFloat(customShares[u.id] || "0"),
       }));
+    }
+
+    // Only send isPaid for the admin's own share when state changed
+    if (
+      currentUserId &&
+      selectedUserIds.includes(currentUserId) &&
+      markMyShareAsPaid !== myShareWasPaid
+    ) {
+      shares = shares.map((s) =>
+        s.userId === currentUserId ? { ...s, isPaid: markMyShareAsPaid } : s
+      );
     }
 
     setLoading(true);
@@ -341,6 +363,26 @@ export default function EditBillModal({
                 </div>
               )}
             </div>
+
+            {/* Mark my share as already paid */}
+            {currentUserId && selectedUserIds.includes(currentUserId) && (
+              <label className="mt-3 flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={markMyShareAsPaid}
+                  onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
+                  className="w-4 h-4 accent-green-600 rounded"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-green-700">
+                    Mark my share as already paid
+                  </div>
+                  <div className="text-xs text-green-600">
+                    Useful if you (as receiver) are also a tenant on this bill.
+                  </div>
+                </div>
+              </label>
+            )}
           </div>
         )}
 

@@ -317,6 +317,7 @@ export default function ExpensesPage() {
         onClose={() => setEditExpense(null)}
         onSuccess={fetchData}
         expense={editExpense}
+        currentUserId={userId ?? ""}
       />
 
       {payModal && (

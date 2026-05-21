@@ -35,12 +35,14 @@ export default function AddExpenseModal({
     users.filter((u) => u.id !== currentUserId).map((u) => u.id)
   );
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
+  const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (open) {
       setSelectedUsers(users.filter((u) => u.id !== currentUserId).map((u) => u.id));
+      setMarkMyShareAsPaid(false);
     }
   }, [open, users, currentUserId]);
 
@@ -85,7 +87,7 @@ export default function AddExpenseModal({
     // All participants (adder + selected)
     const allParticipants = [currentUserId, ...selectedUsers];
 
-    let shares: { userId: string; amount: number }[];
+    let shares: { userId: string; amount: number; isPaid?: boolean }[];
     if (splitMode === "equal") {
       const shareAmt = totalAmount / allParticipants.length;
       shares = allParticipants.map((uid) => ({ userId: uid, amount: shareAmt }));
@@ -103,6 +105,13 @@ export default function AddExpenseModal({
         userId: uid,
         amount: parseFloat(customShares[uid] || "0"),
       }));
+    }
+
+    // Mark adder's own share as paid if requested
+    if (markMyShareAsPaid) {
+      shares = shares.map((s) =>
+        s.userId === currentUserId ? { ...s, isPaid: true } : s
+      );
     }
 
     setLoading(true);
@@ -129,6 +138,7 @@ export default function AddExpenseModal({
     setAmount("");
     setSplitMode("equal");
     setCustomShares({});
+    setMarkMyShareAsPaid(false);
     setError("");
   };
 
@@ -280,6 +290,24 @@ export default function AddExpenseModal({
                 </div>
               ))}
             </div>
+
+            {/* Mark my share as already paid (the adder paid for the whole thing) */}
+            <label className="mt-3 flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={markMyShareAsPaid}
+                onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
+                className="w-4 h-4 accent-green-600 rounded"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-green-700">
+                  Mark my share as already paid
+                </div>
+                <div className="text-xs text-green-600">
+                  You don&apos;t owe yourself — keep this on if you fronted the cost.
+                </div>
+              </div>
+            </label>
           </div>
         )}
 

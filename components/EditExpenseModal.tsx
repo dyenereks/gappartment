@@ -2,12 +2,19 @@
 import { useState, useEffect } from "react";
 import Modal from "./Modal";
 
+interface ExpenseShare {
+  id: string;
+  isPaid: boolean;
+  user: { id: string };
+}
+
 interface Expense {
   id: string;
   title: string;
   description: string | null;
   amount: number;
   month: string;
+  shares: ExpenseShare[];
 }
 
 interface EditExpenseModalProps {
@@ -15,6 +22,7 @@ interface EditExpenseModalProps {
   onClose: () => void;
   onSuccess: () => void;
   expense: Expense | null;
+  currentUserId: string;
 }
 
 export default function EditExpenseModal({
@@ -22,11 +30,15 @@ export default function EditExpenseModal({
   onClose,
   onSuccess,
   expense,
+  currentUserId,
 }: EditExpenseModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [month, setMonth] = useState("");
+  const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
+  const [myShareWasPaid, setMyShareWasPaid] = useState(false);
+  const [hasMyShare, setHasMyShare] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -37,8 +49,14 @@ export default function EditExpenseModal({
       setAmount(String(expense.amount));
       setMonth(expense.month);
       setError("");
+
+      const myShare = expense.shares.find((s) => s.user.id === currentUserId);
+      const wasPaid = myShare?.isPaid ?? false;
+      setHasMyShare(!!myShare);
+      setMyShareWasPaid(wasPaid);
+      setMarkMyShareAsPaid(wasPaid);
     }
-  }, [expense]);
+  }, [expense, currentUserId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,15 +74,20 @@ export default function EditExpenseModal({
 
     setLoading(true);
     try {
+      const payload: Record<string, unknown> = {
+        title: title.trim(),
+        description: description.trim() || null,
+        amount: totalAmount,
+        month,
+      };
+      // Only include the flag if it actually changed
+      if (hasMyShare && markMyShareAsPaid !== myShareWasPaid) {
+        payload.markMyShareAsPaid = markMyShareAsPaid;
+      }
       const res = await fetch(`/api/expenses/${expense!.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim() || null,
-          amount: totalAmount,
-          month,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
       onSuccess();
@@ -137,6 +160,26 @@ export default function EditExpenseModal({
         <p className="text-xs text-charcoal-200 bg-cream-100 rounded-xl px-3 py-2">
           Changing the amount will recalculate all shares equally.
         </p>
+
+        {/* Mark my share as already paid */}
+        {hasMyShare && (
+          <label className="flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+            <input
+              type="checkbox"
+              checked={markMyShareAsPaid}
+              onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
+              className="w-4 h-4 accent-green-600 rounded"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-green-700">
+                Mark my share as already paid
+              </div>
+              <div className="text-xs text-green-600">
+                You don&apos;t owe yourself — keep this on if you fronted the cost.
+              </div>
+            </div>
+          </label>
+        )}
 
         {error && (
           <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">

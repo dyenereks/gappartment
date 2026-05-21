@@ -53,9 +53,17 @@ export async function POST(req: Request) {
       addedById: userId,
       receiverId,
       shares: {
-        create: shares.map((s: { userId: string; amount: number }) => ({
+        create: shares.map((s: { userId: string; amount: number; isPaid?: boolean }) => ({
           userId: s.userId,
           amount: s.amount,
+          ...(s.isPaid
+            ? {
+                isPaid: true,
+                paidAt: new Date(),
+                confirmedAt: new Date(),
+                confirmedById: userId,
+              }
+            : {}),
         })),
       },
     },

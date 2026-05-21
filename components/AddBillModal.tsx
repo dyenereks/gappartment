@@ -36,6 +36,7 @@ export default function AddBillModal({
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(users.map((u) => u.id));
   const [splitMode, setSplitMode] = useState<"equal" | "custom">("equal");
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
+  const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -47,6 +48,7 @@ export default function AddBillModal({
     if (open) {
       setSelectedUserIds(users.map((u) => u.id));
       setReceiverId(currentUserId || users[0]?.id || "");
+      setMarkMyShareAsPaid(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -81,7 +83,7 @@ export default function AddBillModal({
       return;
     }
 
-    let shares;
+    let shares: { userId: string; amount: number; isPaid?: boolean }[];
     if (splitMode === "equal") {
       const shareAmt = totalAmount / selectedUsers.length;
       shares = selectedUsers.map((u) => ({ userId: u.id, amount: shareAmt }));
@@ -95,6 +97,13 @@ export default function AddBillModal({
         userId: u.id,
         amount: parseFloat(customShares[u.id] || "0"),
       }));
+    }
+
+    // Mark admin's own share paid if requested (and admin is a tenant)
+    if (markMyShareAsPaid && currentUserId) {
+      shares = shares.map((s) =>
+        s.userId === currentUserId ? { ...s, isPaid: true } : s
+      );
     }
 
     setLoading(true);
@@ -130,6 +139,7 @@ export default function AddBillModal({
     setDueDate("");
     setSplitMode("equal");
     setCustomShares({});
+    setMarkMyShareAsPaid(false);
     setError("");
   };
 
@@ -332,6 +342,26 @@ export default function AddBillModal({
                 </div>
               )}
             </div>
+
+            {/* Mark my share as already paid */}
+            {currentUserId && selectedUserIds.includes(currentUserId) && (
+              <label className="mt-3 flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={markMyShareAsPaid}
+                  onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
+                  className="w-4 h-4 accent-green-600 rounded"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-green-700">
+                    Mark my share as already paid
+                  </div>
+                  <div className="text-xs text-green-600">
+                    Useful if you (as receiver) are also a tenant on this bill.
+                  </div>
+                </div>
+              </label>
+            )}
           </div>
         )}
 
