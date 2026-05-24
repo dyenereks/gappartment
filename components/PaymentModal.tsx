@@ -69,7 +69,9 @@ export default function PaymentModal(props: Props) {
     setLoading(true);
     try {
       const uploaded = await startUpload([proofFile]);
-      if (!uploaded?.[0]?.url) throw new Error("Upload failed");
+      if (!uploaded?.[0]?.url) {
+        throw new Error("Upload returned no URL (UploadThing may be misconfigured)");
+      }
       const proofUrl = uploaded[0].url;
       if (shareType === "bill") {
         await submitBillProof({ shareId, proofUrl });
@@ -81,7 +83,10 @@ export default function PaymentModal(props: Props) {
       setProofPreview(null);
       setError("");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(
+        "Upload failed: " +
+          (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setLoading(false);
     }

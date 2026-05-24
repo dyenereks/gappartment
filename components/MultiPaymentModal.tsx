@@ -62,7 +62,9 @@ export default function MultiPaymentModal({
     setLoading(true);
     try {
       const uploaded = await startUpload([proofFile]);
-      if (!uploaded?.[0]?.url) throw new Error("Upload failed");
+      if (!uploaded?.[0]?.url) {
+        throw new Error("Upload returned no URL (UploadThing may be misconfigured)");
+      }
       const proofUrl = uploaded[0].url;
       const billIds = items
         .filter((i) => i.kind === "bill")
@@ -80,7 +82,10 @@ export default function MultiPaymentModal({
       setProofPreview(null);
       setError("");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(
+        "Upload failed: " +
+          (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setLoading(false);
     }

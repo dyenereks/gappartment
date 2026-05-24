@@ -97,9 +97,19 @@ export default function PaymentMethodModal({
     let qrUrl: string | null = existingQrUrl;
     if (qrFile) {
       setLoading(true);
-      const uploaded = await startUpload([qrFile]).catch(() => null);
+      let uploaded;
+      try {
+        uploaded = await startUpload([qrFile]);
+      } catch (err: unknown) {
+        setError(
+          "QR upload failed: " +
+            (err instanceof Error ? err.message : String(err))
+        );
+        setLoading(false);
+        return;
+      }
       if (!uploaded?.[0]?.url) {
-        setError("QR upload failed");
+        setError("QR upload returned no URL");
         setLoading(false);
         return;
       }
