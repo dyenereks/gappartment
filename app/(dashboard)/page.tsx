@@ -1,389 +1,413 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useState } from "react";
+import { useQuery } from "convex/react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
+import PageHead from "@/components/PageHead";
+import MonthPicker from "@/components/MonthPicker";
+import Badge from "@/components/Badge";
+import Avatar from "@/components/Avatar";
+import Ring from "@/components/Ring";
+import BillRow from "@/components/BillRow";
+import Icon from "@/components/Icon";
 import {
-  TrendingDown,
-  TrendingUp,
-  Receipt,
-  ShoppingBag,
-  AlertCircle,
-  ArrowRight,
-} from "lucide-react";
-import MonthSelector from "@/components/MonthSelector";
-import { formatCurrency, getCurrentMonth, formatMonth, BILL_TYPE_LABELS, BILL_TYPE_ICONS, displayName } from "@/lib/utils";
-
-interface UserData {
-  id: string;
-  name: string;
-  nickname?: string | null;
-  isAdmin: boolean;
-}
-
-interface BillShare {
-  id: string;
-  amount: number;
-  isPaid: boolean;
-  proofUrl: string | null;
-  user: { id: string; name: string; nickname?: string | null };
-}
-
-interface Bill {
-  id: string;
-  type: string;
-  amount: number;
-  month: string;
-  receiver: { id: string; name: string; nickname?: string | null };
-  shares: BillShare[];
-}
-
-interface ExpenseShare {
-  id: string;
-  amount: number;
-  isPaid: boolean;
-  proofUrl: string | null;
-  user: { id: string; name: string; nickname?: string | null };
-}
-
-interface Expense {
-  id: string;
-  title: string;
-  amount: number;
-  month: string;
-  addedBy: { id: string; name: string; nickname?: string | null };
-  shares: ExpenseShare[];
-}
+  BILL_TYPE_ICON,
+  BILL_TYPE_LABELS,
+  displayName,
+  formatCurrency,
+  formatMonth,
+  getCurrentMonth,
+} from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import type { IconName } from "@/components/Icon";
 
 export default function DashboardPage() {
   const { user: clerkUser } = useUser();
   const [month, setMonth] = useState(getCurrentMonth());
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [users, setUsers] = useState<UserData[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const currentUser = users.find((u) => u.id === clerkUser?.id);
+  const me = useQuery(api.users.current);
+  const users = useQuery(api.users.list);
+  const bills = useQuery(api.bills.listByMonth, { month });
+  const expenses = useQuery(api.expenses.listByMonth, { month });
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [usersRes, billsRes, expensesRes] = await Promise.all([
-        fetch("/api/users"),
-        fetch(`/api/bills?month=${month}`),
-        fetch(`/api/expenses?month=${month}`),
-      ]);
-      const [u, b, e] = await Promise.all([
-        usersRes.json(),
-        billsRes.json(),
-        expensesRes.json(),
-      ]);
-      setUsers(u);
-      setBills(b);
-      setExpenses(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [month]);
+  const loading =
+    me === undefined ||
+    users === undefined ||
+    bills === undefined ||
+    expenses === undefined;
+  const myId = me?._id;
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Per-peer balances (admin-side: they owe me)
+  const peersOweMe = (users ?? [])
+    .filter((u) => u._id !== myId)
+    .map((u) => {
+      const fromBills = (bills ?? [])
+        .filter((b) => b.receiver?._id === myId)
+        .flatMap((b) =>
+          b.shares.filter((s) => s.user?._id === u._id && !s.isPaid)
+        )
+        .reduce((sum, s) => sum + s.amount, 0);
+      const fromExpenses = (expenses ?? [])
+        .filter((e) => e.addedBy?._id === myId)
+        .flatMap((e) =>
+          e.shares.filter((s) => s.user?._id === u._id && !s.isPaid)
+        )
+        .reduce((sum, s) => sum + s.amount, 0);
+      return { user: u, owesYou: fromBills + fromExpenses };
+    });
 
-  // --- Balance calculations ---
-  const userId = clerkUser?.id;
-
-  // What I owe (bills where I'm payer, not yet confirmed)
-  const myBillShares = bills.flatMap((b) =>
-    b.shares.filter((s) => s.user.id === userId && !s.isPaid && b.receiver.id !== userId)
+  // Hero card — the current user's own outstanding total this month
+  // (sum of their unpaid shares across every bill).
+  const monthBills = bills ?? [];
+  const unpaidBills = monthBills.filter((b) =>
+    b.shares.some((s) => !s.isPaid)
   );
-  const myExpenseShares = expenses.flatMap((e) =>
-    e.shares.filter((s) => s.user.id === userId && !s.isPaid && e.addedBy.id !== userId)
-  );
+  const totalPayable = monthBills
+    .flatMap((b) =>
+      b.shares.filter((s) => s.user?._id === myId && !s.isPaid)
+    )
+    .reduce((sum, s) => sum + s.amount, 0);
 
-  const totalOwed = myBillShares.reduce((sum, s) => sum + s.amount, 0)
-    + myExpenseShares.reduce((sum, s) => sum + s.amount, 0);
+  // Upcoming — unpaid, sorted by due date
+  const upcoming = (bills ?? [])
+    .filter((b) => b.shares.some((s) => !s.isPaid))
+    .sort((a, b) => (a.dueDate ?? Infinity) - (b.dueDate ?? Infinity));
 
-  // What others owe me (bills where I'm receiver, expenses I added)
-  const receivableBillShares = bills
-    .filter((b) => b.receiver.id === userId)
-    .flatMap((b) => b.shares.filter((s) => s.user.id !== userId && !s.isPaid));
-  const receivableExpenseShares = expenses
-    .filter((e) => e.addedBy.id === userId)
-    .flatMap((e) => e.shares.filter((s) => s.user.id !== userId && !s.isPaid));
-
-  const totalReceivable = receivableBillShares.reduce((sum, s) => sum + s.amount, 0)
-    + receivableExpenseShares.reduce((sum, s) => sum + s.amount, 0);
-
-  // Pending confirmations (I receive, proof uploaded, not yet confirmed)
-  const pendingConfirmations = [
-    ...bills.filter((b) => b.receiver.id === userId).flatMap((b) =>
-      b.shares.filter((s) => s.proofUrl && !s.isPaid)
-    ),
-    ...expenses.filter((e) => e.addedBy.id === userId).flatMap((e) =>
-      e.shares.filter((s) => s.proofUrl && !s.isPaid)
-    ),
-  ];
-
-  // Unpaid my shares (I need to pay)
-  const myUnpaidBills = bills.filter(
-    (b) => b.receiver.id !== userId && b.shares.some((s) => s.user.id === userId && !s.isPaid)
-  );
-  const myUnpaidExpenses = expenses.filter(
-    (e) => e.addedBy.id !== userId && e.shares.some((s) => s.user.id === userId && !s.isPaid)
-  );
+  const firstName =
+    (me ? displayName(me) : clerkUser?.firstName ?? "there").split(" ")[0];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-brown-600">
-            Hi, {clerkUser?.firstName ?? "there"} 👋
-          </h1>
-          <p className="text-charcoal-300 text-sm mt-0.5">
-            {formatMonth(month)} overview
-          </p>
-        </div>
-        <MonthSelector value={month} onChange={setMonth} />
-      </div>
+    <div>
+      <PageHead
+        eyebrow={`${formatMonth(month)} · Welcome back`}
+        title={`Hi, <em>${firstName}</em>.`}
+        sub="Here's where everyone stands this month."
+        action={<MonthPicker value={month} onChange={setMonth} />}
+      />
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white rounded-2xl p-5 animate-pulse h-28" />
-          ))}
-        </div>
+        <DashboardSkeleton />
       ) : (
         <>
-          {/* Summary cards */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-cream-300">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="p-2 bg-red-50 rounded-lg">
-                  <TrendingDown size={18} className="text-red-500" />
-                </div>
-                <span className="text-sm text-charcoal-300 font-medium">I Owe</span>
-              </div>
-              <div className="text-2xl font-bold text-charcoal-500">{formatCurrency(totalOwed)}</div>
-              <div className="text-xs text-charcoal-200 mt-1">
-                {myBillShares.length + myExpenseShares.length} unpaid item{myBillShares.length + myExpenseShares.length !== 1 ? "s" : ""}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-cream-300">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="p-2 bg-green-50 rounded-lg">
-                  <TrendingUp size={18} className="text-green-500" />
-                </div>
-                <span className="text-sm text-charcoal-300 font-medium">Owed to Me</span>
-              </div>
-              <div className="text-2xl font-bold text-charcoal-500">{formatCurrency(totalReceivable)}</div>
-              <div className="text-xs text-charcoal-200 mt-1">
-                {receivableBillShares.length + receivableExpenseShares.length} pending
-              </div>
-            </div>
-          </div>
-
-          {/* Pending confirmations alert */}
-          {pendingConfirmations.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-              <AlertCircle size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-amber-700">
-                  {pendingConfirmations.length} payment{pendingConfirmations.length !== 1 ? "s" : ""} awaiting your confirmation
-                </p>
-                <p className="text-xs text-amber-600 mt-0.5">
-                  Go to Payments to confirm received payments
-                </p>
-              </div>
-              <Link href="/payments" className="text-xs font-medium text-amber-700 underline flex-shrink-0">
-                View
-              </Link>
-            </div>
-          )}
-
-          {/* Bills this month */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold text-charcoal-400 flex items-center gap-2">
-                <Receipt size={16} />
-                Bills This Month
-              </h2>
-              <Link href="/bills" className="text-xs text-brown-500 flex items-center gap-1 hover:text-brown-600">
-                View all <ArrowRight size={12} />
-              </Link>
-            </div>
-
-            {bills.length === 0 ? (
-              <div className="bg-white rounded-2xl p-6 text-center border border-cream-300">
-                <p className="text-charcoal-300 text-sm">No bills added for {formatMonth(month)}</p>
-                {currentUser?.isAdmin && (
-                  <Link href="/bills" className="mt-2 inline-block text-sm text-brown-500 underline">
-                    Add bills
-                  </Link>
+          {/* Hero balance + share progress */}
+          <div className="cols-2">
+            <div className="balance-hero">
+              <div className="flex center between">
+                <span className="label">Total bills payable</span>
+                {unpaidBills.length > 0 && (
+                  <Badge kind="accent" dot>
+                    {unpaidBills.length} unpaid
+                  </Badge>
                 )}
               </div>
+              <div className="amount">
+                <em>{formatCurrency(totalPayable)}</em>
+              </div>
+              <div className="sub">
+                Across {unpaidBills.length} of {monthBills.length} bill
+                {monthBills.length === 1 ? "" : "s"} · {formatMonth(month)}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 24,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                {unpaidBills.map((b) => {
+                  const iconName = (BILL_TYPE_ICON[b.type] ?? "receipt") as IconName;
+                  return (
+                    <Link
+                      key={b._id}
+                      href="/bills"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        background: "oklch(1 0 0 / 0.08)",
+                        borderRadius: 999,
+                        color: "var(--bg)",
+                        border: "1px solid oklch(1 0 0 / 0.1)",
+                      }}
+                    >
+                      <Icon name={iconName} size={14} />
+                      <span style={{ fontSize: 13 }}>
+                        {BILL_TYPE_LABELS[b.type] ?? b.type}
+                      </span>
+                      <span className="serif tnum" style={{ fontSize: 16 }}>
+                        {formatCurrency(b.amount)}
+                      </span>
+                    </Link>
+                  );
+                })}
+                {unpaidBills.length === 0 && (
+                  <div className="sub">
+                    {monthBills.length === 0
+                      ? "No bills logged for this month yet."
+                      : "All bills are fully collected this month. "}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {(() => {
+              // === Collection progress card ===
+              const mine = monthBills.flatMap((b) =>
+                b.shares.filter((s) => s.user?._id === myId)
+              );
+              const mineTotal = mine.reduce((s, x) => s + x.amount, 0);
+              const minePaid = mine
+                .filter((x) => x.isPaid)
+                .reduce((s, x) => s + x.amount, 0);
+              const minePct = mineTotal > 0 ? minePaid / mineTotal : 0;
+
+              // Right ring — money owed *to me* this month (bills I receive)
+              // and how much of it has actually been received.
+              const owedToMe = monthBills
+                .filter((b) => b.receiver?._id === myId)
+                .flatMap((b) =>
+                  b.shares.filter((s) => s.user?._id !== myId)
+                );
+              const owedTotal = owedToMe.reduce((s, x) => s + x.amount, 0);
+              const owedReceived = owedToMe
+                .filter((x) => x.isPaid)
+                .reduce((s, x) => s + x.amount, 0);
+              const owedPct = owedTotal > 0 ? owedReceived / owedTotal : 0;
+
+              return (
+                <div className="card card-lg">
+                  <div
+                    className="muted"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Collection progress
+                  </div>
+                  <h2 className="card-title" style={{ marginTop: 8 }}>
+                    {minePct === 1
+                      ? "Settled up"
+                      : `${formatCurrency(mineTotal - minePaid)} to go`}
+                  </h2>
+
+                  <div className="ring-pair">
+                    <div className="ring-cell">
+                      <Ring pct={minePct} size={104} />
+                      <div className="ring-cell-label">Your share</div>
+                      <div className="ring-cell-meta tnum">
+                        {formatCurrency(minePaid)}{" "}
+                        <span className="muted">
+                          of {formatCurrency(mineTotal)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="ring-cell">
+                      <Ring pct={owedPct} size={104} accent />
+                      <div className="ring-cell-label">Owed to me received</div>
+                      <div className="ring-cell-meta tnum">
+                        {formatCurrency(owedReceived)}{" "}
+                        <span className="muted">
+                          of {formatCurrency(owedTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      height: 1,
+                      background: "var(--line-soft)",
+                      margin: "16px 0",
+                    }}
+                  />
+                  <div
+                    className="muted"
+                    style={{ fontSize: 12, marginBottom: 8 }}
+                  >
+                    By bill
+                  </div>
+                  {monthBills.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 13 }}>
+                      No bills logged for this month.
+                    </div>
+                  ) : (
+                    monthBills.map((b) => {
+                      const total = b.amount;
+                      const paid = b.shares
+                        .filter((s) => s.isPaid)
+                        .reduce((a, s) => a + s.amount, 0);
+                      const pct = total > 0 ? paid / total : 0;
+                      return (
+                        <div
+                          key={b._id}
+                          className="flex center between gap-3"
+                          style={{ padding: "5px 0" }}
+                        >
+                          <div style={{ minWidth: 80, fontSize: 13 }}>
+                            {BILL_TYPE_LABELS[b.type] ?? b.type}
+                          </div>
+                          <div className="bar" style={{ flex: 1 }}>
+                            <span style={{ width: `${pct * 100}%` }} />
+                          </div>
+                          <div
+                            className="tnum muted"
+                            style={{
+                              fontSize: 12,
+                              minWidth: 50,
+                              textAlign: "right",
+                            }}
+                          >
+                            {Math.round(pct * 100)}%
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Upcoming bills */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <div>
+                <h2 className="card-title">Upcoming bills</h2>
+                <div className="card-sub">
+                  {upcoming.length} bill{upcoming.length === 1 ? "" : "s"} awaiting payment
+                </div>
+              </div>
+              <Link href="/bills" className="btn btn-ghost btn-sm">
+                View all <Icon name="arrow-right" size={14} />
+              </Link>
+            </div>
+            {upcoming.length === 0 ? (
+              <div
+                style={{ padding: "32px 8px", textAlign: "center" }}
+                className="muted"
+              >
+                No outstanding bills — well done.
+              </div>
             ) : (
-              <div className="space-y-3">
-                {bills.slice(0, 3).map((bill) => {
-                  const myShare = bill.shares.find((s) => s.user.id === userId);
+              upcoming.slice(0, 4).map((b) => <BillRow key={b._id} bill={b} />)
+            )}
+          </div>
+
+          {/* Roommates + quick actions */}
+          <div className="cols-2-1" style={{ marginTop: 24 }}>
+            <div className="card card-lg">
+              <div className="card-head">
+                <h2 className="card-title">Roommates</h2>
+              </div>
+              <div
+                className="grid gap-3"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                }}
+              >
+                {(users ?? []).map((u) => {
+                  const isMine = u._id === myId;
+                  const balance = peersOweMe.find(
+                    (p) => p.user._id === u._id
+                  );
                   return (
                     <div
-                      key={bill.id}
-                      className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm flex items-center gap-4"
+                      key={u._id}
+                      style={{
+                        padding: 16,
+                        border: "1px solid var(--line)",
+                        borderRadius: 12,
+                        background: "var(--paper-2)",
+                      }}
                     >
-                      <div className="text-2xl">{BILL_TYPE_ICONS[bill.type] ?? "📋"}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-charcoal-500 text-sm">
-                          {BILL_TYPE_LABELS[bill.type] ?? bill.type}
-                        </div>
-                        <div className="text-xs text-charcoal-200">
-                          Total: {formatCurrency(bill.amount)} • Receiver: {displayName(bill.receiver)}
-                        </div>
+                      <div className="flex center between">
+                        <Avatar user={u} />
+                        {u.isAdmin && <Badge kind="ink">Admin</Badge>}
                       </div>
-                      {myShare && (
-                        <div className="text-right flex-shrink-0">
-                          <div className="font-semibold text-brown-600 text-sm">
-                            {formatCurrency(myShare.amount)}
-                          </div>
-                          <div className={`text-xs font-medium mt-0.5 ${
-                            myShare.isPaid
-                              ? "text-green-600"
-                              : myShare.proofUrl
-                              ? "text-amber-500"
-                              : "text-red-500"
-                          }`}>
-                            {myShare.isPaid ? "Paid ✓" : myShare.proofUrl ? "Pending" : "Unpaid"}
-                          </div>
+                      <div
+                        style={{
+                          marginTop: 12,
+                          fontWeight: 500,
+                          fontSize: 14,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {displayName(u)}
+                      </div>
+                      {isMine ? (
+                        <div className="muted" style={{ fontSize: 13 }}>
+                          That&apos;s you
+                        </div>
+                      ) : balance && balance.owesYou > 0 ? (
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "var(--success)",
+                            marginTop: 2,
+                          }}
+                        >
+                          Owes you {formatCurrency(balance.owesYou)}
+                        </div>
+                      ) : (
+                        <div
+                          className="muted"
+                          style={{ fontSize: 13, marginTop: 2 }}
+                        >
+                          All settled
                         </div>
                       )}
                     </div>
                   );
                 })}
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* My unpaid items */}
-          {(myUnpaidBills.length > 0 || myUnpaidExpenses.length > 0) && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-base font-semibold text-charcoal-400 flex items-center gap-2">
-                  <ShoppingBag size={16} />
-                  Need to Pay
-                </h2>
-                <Link href="/payments" className="text-xs text-brown-500 flex items-center gap-1 hover:text-brown-600">
-                  Pay now <ArrowRight size={12} />
+            <div className="card card-lg">
+              <div className="card-head">
+                <h2 className="card-title">Quick actions</h2>
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <Link href="/payments" className="btn btn-outline btn-block">
+                  <Icon name="wallet" size={14} /> Pay outstanding shares
+                </Link>
+                <Link href="/profile" className="btn btn-outline btn-block">
+                  <Icon name="wallet" size={14} /> Update payment methods
+                </Link>
+                {me?.isAdmin && (
+                  <Link href="/bills" className="btn btn-primary btn-block">
+                    <Icon name="plus" size={14} /> Add a bill
+                  </Link>
+                )}
+                <Link href="/expenses" className="btn btn-primary btn-block">
+                  <Icon name="plus" size={14} /> Add a shared expense
                 </Link>
               </div>
-              <div className="space-y-3">
-                {myUnpaidBills.map((bill) => {
-                  const myShare = bill.shares.find((s) => s.user.id === userId && !s.isPaid)!;
-                  return (
-                    <Link
-                      key={bill.id}
-                      href="/payments"
-                      className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center gap-3 hover:bg-red-100 transition-colors"
-                    >
-                      <span className="text-xl">{BILL_TYPE_ICONS[bill.type] ?? "📋"}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-charcoal-500">
-                          {BILL_TYPE_LABELS[bill.type] ?? bill.type}
-                        </div>
-                        <div className="text-xs text-charcoal-300">to {displayName(bill.receiver)}</div>
-                      </div>
-                      <div className="font-semibold text-red-600 text-sm flex-shrink-0">
-                        {formatCurrency(myShare.amount)}
-                      </div>
-                    </Link>
-                  );
-                })}
-                {myUnpaidExpenses.map((exp) => {
-                  const myShare = exp.shares.find((s) => s.user.id === userId && !s.isPaid)!;
-                  return (
-                    <Link
-                      key={exp.id}
-                      href="/payments"
-                      className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center gap-3 hover:bg-red-100 transition-colors"
-                    >
-                      <span className="text-xl">🛍️</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-charcoal-500">{exp.title}</div>
-                        <div className="text-xs text-charcoal-300">to {displayName(exp.addedBy)}</div>
-                      </div>
-                      <div className="font-semibold text-red-600 text-sm flex-shrink-0">
-                        {formatCurrency(myShare.amount)}
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Tenants overview */}
-          <div>
-            <h2 className="text-base font-semibold text-charcoal-400 mb-3">All Tenants</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {users.map((u) => {
-                const theirBillOwed = bills
-                  .filter((b) => b.receiver.id === userId)
-                  .flatMap((b) => b.shares.filter((s) => s.user.id === u.id && !s.isPaid))
-                  .reduce((sum, s) => sum + s.amount, 0);
-                const theirExpOwed = expenses
-                  .filter((e) => e.addedBy.id === userId)
-                  .flatMap((e) => e.shares.filter((s) => s.user.id === u.id && !s.isPaid))
-                  .reduce((sum, s) => sum + s.amount, 0);
-                const netOwedToMe = theirBillOwed + theirExpOwed;
-
-                const iOweThemBills = bills
-                  .filter((b) => b.receiver.id === u.id)
-                  .flatMap((b) => b.shares.filter((s) => s.user.id === userId && !s.isPaid))
-                  .reduce((sum, s) => sum + s.amount, 0);
-                const iOweThemExp = expenses
-                  .filter((e) => e.addedBy.id === u.id)
-                  .flatMap((e) => e.shares.filter((s) => s.user.id === userId && !s.isPaid))
-                  .reduce((sum, s) => sum + s.amount, 0);
-                const iOweThem = iOweThemBills + iOweThemExp;
-
-                const net = netOwedToMe - iOweThem;
-
-                return (
-                  <div key={u.id} className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-brown-400 flex items-center justify-center text-white font-bold flex-shrink-0">
-                        {displayName(u).charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-charcoal-500 text-sm flex items-center gap-1.5">
-                          {displayName(u)}
-                          {u.isAdmin && (
-                            <span className="text-[10px] bg-brown-100 text-brown-500 px-1.5 py-0.5 rounded-full font-medium">
-                              Admin
-                            </span>
-                          )}
-                          {u.id === userId && (
-                            <span className="text-[10px] text-charcoal-200">(you)</span>
-                          )}
-                        </div>
-                        {u.id !== userId && (
-                          <div className={`text-xs font-medium mt-0.5 ${
-                            net > 0 ? "text-green-600" : net < 0 ? "text-red-500" : "text-charcoal-200"
-                          }`}>
-                            {net > 0
-                              ? `Owes you ${formatCurrency(net)}`
-                              : net < 0
-                              ? `You owe ${formatCurrency(Math.abs(net))}`
-                              : "All settled"}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="cols-2">
+      {[1, 2].map((i) => (
+        <div
+          key={i}
+          className="card card-lg"
+          style={{ minHeight: 200 }}
+          aria-hidden
+        />
+      ))}
     </div>
   );
 }

@@ -1,10 +1,19 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useMutation } from "convex/react";
 import Modal from "./Modal";
-import { formatCurrency, getCurrentMonth, displayName } from "@/lib/utils";
+import Icon from "./Icon";
+import Avatar from "./Avatar";
+import {
+  displayName,
+  formatCurrency,
+  getCurrentMonth,
+} from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
 interface User {
-  id: string;
+  _id: Id<"users">;
   name: string;
   nickname?: string | null;
 }
@@ -12,28 +21,26 @@ interface User {
 interface AddExpenseModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
   users: User[];
-  currentUserId: string;
+  currentUserId?: Id<"users">;
   defaultMonth?: string;
 }
 
 export default function AddExpenseModal({
   open,
   onClose,
-  onSuccess,
   users,
   currentUserId,
   defaultMonth,
 }: AddExpenseModalProps) {
+  const create = useMutation(api.expenses.create);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [month, setMonth] = useState(defaultMonth ?? getCurrentMonth());
   const [splitMode, setSplitMode] = useState<"equal" | "custom">("equal");
-  const [selectedUsers, setSelectedUsers] = useState<string[]>(
-    users.filter((u) => u.id !== currentUserId).map((u) => u.id)
-  );
+  const [selectedUsers, setSelectedUsers] = useState<Id<"users">[]>([]);
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
   const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -41,7 +48,9 @@ export default function AddExpenseModal({
 
   useEffect(() => {
     if (open) {
-      setSelectedUsers(users.filter((u) => u.id !== currentUserId).map((u) => u.id));
+      setSelectedUsers(
+        users.filter((u) => u._id !== currentUserId).map((u) => u._id)
+      );
       setMarkMyShareAsPaid(false);
     }
   }, [open, users, currentUserId]);
@@ -50,19 +59,25 @@ export default function AddExpenseModal({
     if (defaultMonth) setMonth(defaultMonth);
   }, [defaultMonth]);
 
-  const participantCount = selectedUsers.length;
-  const equalShare = amount && participantCount > 0
-    ? parseFloat(amount) / (participantCount + 1) // includes adder
-    : 0;
-
-  const toggleUser = (userId: string) => {
+  const toggleUser = (userId: Id<"users">) =>
     setSelectedUsers((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
     );
-  };
 
-  const customTotal = Object.values(customShares).reduce(
-    (sum, v) => sum + (parseFloat(v) || 0),
+  const allParticipants: User[] = currentUserId
+    ? [
+        users.find((u) => u._id === currentUserId)!,
+        ...users.filter((u) => selectedUsers.includes(u._id)),
+      ].filter(Boolean)
+    : [];
+  const participantCount = allParticipants.length;
+  const totalNum = parseFloat(amount) || 0;
+  const equalShare =
+    totalNum > 0 && participantCount > 0 ? totalNum / participantCount : 0;
+  const customTotal = allParticipants.reduce(
+    (sum, u) => sum + (parseFloat(customShares[u._id] || "0") || 0),
     0
   );
 
@@ -70,8 +85,7 @@ export default function AddExpenseModal({
     e.preventDefault();
     setError("");
 
-    const totalAmount = parseFloat(amount);
-    if (!totalAmount || totalAmount <= 0) {
+    if (!totalNum || totalNum <= 0) {
       setError("Enter a valid amount");
       return;
     }
@@ -79,35 +93,35 @@ export default function AddExpenseModal({
       setError("Enter a title");
       return;
     }
+    if (!currentUserId) {
+      setError("Not signed in yet");
+      return;
+    }
     if (selectedUsers.length === 0) {
       setError("Select at least one tenant to share with");
       return;
     }
 
-    // All participants (adder + selected)
-    const allParticipants = [currentUserId, ...selectedUsers];
+    const allIds: Id<"users">[] = [currentUserId, ...selectedUsers];
 
-    let shares: { userId: string; amount: number; isPaid?: boolean }[];
+    let shares: { userId: Id<"users">; amount: number; isPaid?: boolean }[];
     if (splitMode === "equal") {
-      const shareAmt = totalAmount / allParticipants.length;
-      shares = allParticipants.map((uid) => ({ userId: uid, amount: shareAmt }));
+      const shareAmt = totalNum / allIds.length;
+      shares = allIds.map((uid) => ({ userId: uid, amount: shareAmt }));
     } else {
-      const assignedTotal = allParticipants.reduce(
-        (sum, uid) => sum + (parseFloat(customShares[uid] || "0")),
-        0
-      );
-      const diff = Math.abs(assignedTotal - totalAmount);
+      const diff = Math.abs(customTotal - totalNum);
       if (diff > 0.01) {
-        setError(`Custom shares must equal total (${formatCurrency(totalAmount)}). Current: ${formatCurrency(assignedTotal)}`);
+        setError(
+          `Custom shares must equal total (${formatCurrency(totalNum)}). Current: ${formatCurrency(customTotal)}`
+        );
         return;
       }
-      shares = allParticipants.map((uid) => ({
+      shares = allIds.map((uid) => ({
         userId: uid,
         amount: parseFloat(customShares[uid] || "0"),
       }));
     }
 
-    // Mark adder's own share as paid if requested
     if (markMyShareAsPaid) {
       shares = shares.map((s) =>
         s.userId === currentUserId ? { ...s, isPaid: true } : s
@@ -116,15 +130,20 @@ export default function AddExpenseModal({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/expenses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description: description || null, amount: totalAmount, month, shares }),
+      await create({
+        title,
+        description: description || null,
+        amount: totalNum,
+        month,
+        shares,
       });
-      if (!res.ok) throw new Error(await res.text());
-      onSuccess();
       onClose();
-      resetForm();
+      setTitle("");
+      setDescription("");
+      setAmount("");
+      setSplitMode("equal");
+      setCustomShares({});
+      setMarkMyShareAsPaid(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to add expense");
     } finally {
@@ -132,179 +151,233 @@ export default function AddExpenseModal({
     }
   };
 
-  const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setAmount("");
-    setSplitMode("equal");
-    setCustomShares({});
-    setMarkMyShareAsPaid(false);
-    setError("");
-  };
-
-  const allParticipants = [
-    users.find((u) => u.id === currentUserId)!,
-    ...users.filter((u) => selectedUsers.includes(u.id)),
-  ].filter(Boolean);
-
   return (
-    <Modal open={open} onClose={onClose} title="Add Shared Expense" size="lg">
-      <form onSubmit={handleSubmit} className="p-5 space-y-5">
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-            What was the expense?
-          </label>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add expense"
+      size="lg"
+      footer={
+        <>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={loading}
+          >
+            <Icon name="check" size={14} />
+            {loading ? "Adding…" : "Save expense"}
+          </button>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} style={{ display: "contents" }}>
+        <div className="field">
+          <label className="field-label">Description</label>
           <input
-            type="text"
+            className="input"
+            placeholder="e.g. Saturday grocery run"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Groceries, LPG refill, Cleaning supplies"
-            required
-            className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-              Total Amount (₱)
-            </label>
+        <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <div className="field">
+            <label className="field-label">Amount</label>
             <input
+              className="input tnum"
               type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
               min="0"
               step="0.01"
-              required
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
+              placeholder="₱0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">Month</label>
+          <div className="field">
+            <label className="field-label">Period</label>
             <input
+              className="input"
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
             />
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-            Notes <span className="text-charcoal-200">(optional)</span>
+        <div className="field">
+          <label className="field-label">
+            Notes <span className="muted">(optional)</span>
           </label>
           <input
-            type="text"
+            className="input"
+            placeholder="Additional details…"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Additional details..."
-            className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
           />
         </div>
 
-        {/* Who shares */}
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-2">
-            Share with (you are always included)
+        <div className="field">
+          <label className="field-label">
+            Share with{" "}
+            <span className="muted">(you are always included)</span>
           </label>
-          <div className="space-y-2">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {users
-              .filter((u) => u.id !== currentUserId)
-              .map((u) => (
-                <label
-                  key={u.id}
-                  className="flex items-center gap-3 p-3 bg-cream-100 rounded-xl cursor-pointer hover:bg-cream-200 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedUsers.includes(u.id)}
-                    onChange={() => toggleUser(u.id)}
-                    className="w-4 h-4 accent-brown-600 rounded"
-                  />
-                  <div className="w-7 h-7 rounded-full bg-brown-300 flex items-center justify-center text-white text-xs font-bold">
-                    {displayName(u).charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-sm text-charcoal-400">{displayName(u)}</span>
-                </label>
-              ))}
+              .filter((u) => u._id !== currentUserId)
+              .map((u) => {
+                const on = selectedUsers.includes(u._id);
+                return (
+                  <button
+                    key={u._id}
+                    type="button"
+                    onClick={() => toggleUser(u._id)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 12px",
+                      border:
+                        "1px solid " +
+                        (on ? "var(--ink)" : "var(--line)"),
+                      background: on ? "var(--ink)" : "var(--paper)",
+                      color: on ? "var(--bg)" : "var(--ink)",
+                      borderRadius: 999,
+                      fontSize: 13,
+                    }}
+                  >
+                    <Avatar user={u} size="sm" />
+                    {displayName(u)}
+                  </button>
+                );
+              })}
           </div>
         </div>
 
-        {/* Split mode */}
-        {selectedUsers.length > 0 && (
-          <div>
-            <div className="flex gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setSplitMode("equal")}
-                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                  splitMode === "equal"
-                    ? "border-brown-600 bg-brown-600 text-white"
-                    : "border-cream-400 text-charcoal-400 hover:border-brown-300"
-                }`}
-              >
-                Equal Split
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitMode("custom")}
-                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                  splitMode === "custom"
-                    ? "border-brown-600 bg-brown-600 text-white"
-                    : "border-cream-400 text-charcoal-400 hover:border-brown-300"
-                }`}
-              >
-                Custom Split
-              </button>
+        {participantCount > 0 && (
+          <div className="field">
+            <label className="field-label">Split</label>
+            <div className="seg">
+              {(["equal", "custom"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={splitMode === m ? "active" : ""}
+                  onClick={() => setSplitMode(m)}
+                >
+                  {m === "equal" ? "Equal" : "Custom"}
+                </button>
+              ))}
             </div>
-
-            <div className="space-y-2 bg-cream-100 rounded-xl p-3">
+            <div
+              style={{
+                marginTop: 10,
+                background: "var(--bg-2)",
+                borderRadius: 12,
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
               {allParticipants.map((u) => (
-                <div key={u.id} className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-brown-300 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {displayName(u).charAt(0).toUpperCase()}
+                <div key={u._id} className="flex center gap-3">
+                  <Avatar user={u} size="sm" />
+                  <div style={{ flex: 1, fontSize: 13 }}>
+                    {displayName(u)}
+                    {u._id === currentUserId && (
+                      <span className="muted"> (you)</span>
+                    )}
                   </div>
-                  <span className="flex-1 text-sm text-charcoal-400">
-                    {displayName(u)} {u.id === currentUserId && "(you)"}
-                  </span>
                   {splitMode === "equal" ? (
-                    <span className="text-sm font-medium text-brown-600">
+                    <div
+                      className="serif tnum"
+                      style={{ fontSize: 16, color: "var(--accent)" }}
+                    >
                       {equalShare > 0 ? formatCurrency(equalShare) : "—"}
-                    </span>
+                    </div>
                   ) : (
                     <input
+                      className="input tnum"
                       type="number"
-                      value={customShares[u.id] ?? ""}
-                      onChange={(e) =>
-                        setCustomShares((prev) => ({ ...prev, [u.id]: e.target.value }))
-                      }
-                      placeholder="0.00"
                       min="0"
                       step="0.01"
-                      className="w-28 px-2 py-1.5 border border-cream-400 rounded-lg text-sm focus:outline-none focus:border-brown-500 bg-white text-right"
+                      placeholder="0.00"
+                      value={customShares[u._id] ?? ""}
+                      onChange={(e) =>
+                        setCustomShares((p) => ({
+                          ...p,
+                          [u._id]: e.target.value,
+                        }))
+                      }
+                      style={{
+                        width: 120,
+                        textAlign: "right",
+                        padding: "6px 10px",
+                      }}
                     />
                   )}
                 </div>
               ))}
+              {splitMode === "custom" && amount && (
+                <div
+                  className="flex center between"
+                  style={{
+                    paddingTop: 8,
+                    borderTop: "1px solid var(--line)",
+                    fontSize: 13,
+                  }}
+                >
+                  <span className="muted">Total assigned</span>
+                  <span
+                    className="tnum"
+                    style={{
+                      fontWeight: 600,
+                      color:
+                        Math.abs(customTotal - totalNum) < 0.01
+                          ? "var(--success)"
+                          : "var(--danger)",
+                    }}
+                  >
+                    {formatCurrency(customTotal)} / {formatCurrency(totalNum)}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* Mark my share as already paid (the adder paid for the whole thing) */}
-            <label className="mt-3 flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+            <label
+              className="flex center gap-3"
+              style={{
+                cursor: "pointer",
+                marginTop: 10,
+                padding: 10,
+                background: "var(--success-soft)",
+                borderRadius: 10,
+                color: "var(--success)",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={markMyShareAsPaid}
                 onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
-                className="w-4 h-4 accent-green-600 rounded"
+                style={{ accentColor: "var(--success)" }}
               />
-              <div className="flex-1">
-                <div className="text-sm font-medium text-green-700">
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>
                   Mark my share as already paid
                 </div>
-                <div className="text-xs text-green-600">
-                  You don&apos;t owe yourself — keep this on if you fronted the cost.
+                <div style={{ fontSize: 11, opacity: 0.85 }}>
+                  You don&apos;t owe yourself — keep this on if you fronted
+                  the cost.
                 </div>
               </div>
             </label>
@@ -312,27 +385,18 @@ export default function AddExpenseModal({
         )}
 
         {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
+          <div
+            style={{
+              color: "var(--danger)",
+              background: "var(--danger-soft)",
+              padding: 10,
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}
-
-        <div className="flex gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-cream-400 text-charcoal-400 text-sm font-medium hover:bg-cream-100 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex-1 py-3 rounded-xl bg-brown-600 text-white text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60"
-          >
-            {loading ? "Adding..." : "Add Expense"}
-          </button>
-        </div>
       </form>
     </Modal>
   );

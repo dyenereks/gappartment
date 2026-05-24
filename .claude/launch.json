@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gappartment",
+      "runtimeExecutable": "/Users/jenerey/.nvm/versions/node/v20.20.0/bin/node",
+      "runtimeArgs": ["/Users/jenerey/projects/gappartment/node_modules/.bin/next", "dev", "-p", "3839"],
+      "port": 3839,
+      "autoPort": false
+    }
+  ]
+}

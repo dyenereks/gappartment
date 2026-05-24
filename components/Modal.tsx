@@ -1,66 +1,67 @@
 "use client";
-import { useEffect, useRef } from "react";
-import { X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useEffect, type ReactNode } from "react";
+import Icon from "./Icon";
 
 interface ModalProps {
   open: boolean;
   onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  size?: "sm" | "md" | "lg";
+  title?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  size?: "md" | "lg";
 }
 
+/**
+ * Design-system modal — bottom-sheet on mobile, centered card on desktop.
+ * Pressing Escape closes it; clicking the backdrop closes it.
+ */
 export default function Modal({
   open,
   onClose,
   title,
   children,
+  footer,
   size = "md",
 }: ModalProps) {
-  const overlayRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    if (open) document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
   }, [open, onClose]);
-
-  useEffect(() => {
-    if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
-    return () => { document.body.style.overflow = ""; };
-  }, [open]);
 
   if (!open) return null;
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      onClick={(e) => e.target === overlayRef.current && onClose()}
-    >
-      <div className="absolute inset-0 bg-charcoal-600/50 backdrop-blur-sm" onClick={onClose} />
+    <div className="modal-backdrop" onClick={onClose}>
       <div
-        className={cn(
-          "relative bg-white w-full rounded-t-2xl sm:rounded-2xl shadow-xl z-10 max-h-[90vh] flex flex-col",
-          size === "sm" && "sm:max-w-sm",
-          size === "md" && "sm:max-w-lg",
-          size === "lg" && "sm:max-w-2xl"
-        )}
+        className="modal"
+        style={size === "lg" ? { maxWidth: 680 } : undefined}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
-        <div className="flex items-center justify-between p-5 border-b border-cream-300 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-brown-600">{title}</h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-cream-200 transition-colors"
-          >
-            <X size={18} className="text-charcoal-300" />
-          </button>
-        </div>
-        <div className="overflow-y-auto flex-1">{children}</div>
+        {title !== undefined && (
+          <div className="modal-head">
+            <h2 className="modal-title">{title}</h2>
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+        )}
+        <div className="modal-body">{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>
   );

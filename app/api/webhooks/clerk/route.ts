@@ -1,7 +1,10 @@
 import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { Webhook } from "svix";
-import { prisma } from "@/lib/prisma";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "@/convex/_generated/api";
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
@@ -35,37 +38,21 @@ export async function POST(req: Request) {
     return new Response("Invalid signature", { status: 400 });
   }
 
-  if (evt.type === "user.created") {
+  if (evt.type === "user.created" || evt.type === "user.updated") {
     const { id, first_name, last_name, email_addresses, image_url } = evt.data;
     const email = email_addresses[0]?.email_address ?? "";
     const name = [first_name, last_name].filter(Boolean).join(" ") || email;
 
-    const userCount = await prisma.user.count();
-
-    await prisma.user.create({
-      data: {
-        id,
-        name,
-        email,
-        imageUrl: image_url,
-        isAdmin: userCount === 0,
-      },
-    });
-  }
-
-  if (evt.type === "user.updated") {
-    const { id, first_name, last_name, email_addresses, image_url } = evt.data;
-    const email = email_addresses[0]?.email_address ?? "";
-    const name = [first_name, last_name].filter(Boolean).join(" ") || email;
-
-    await prisma.user.update({
-      where: { id },
-      data: { name, email, imageUrl: image_url },
+    await convex.mutation(api.users.syncFromWebhook, {
+      clerkId: id,
+      name,
+      email,
+      imageUrl: image_url ?? null,
     });
   }
 
   if (evt.type === "user.deleted" && evt.data.id) {
-    await prisma.user.delete({ where: { id: evt.data.id } }).catch(() => null);
+    await convex.mutation(api.users.deleteByClerkId, { clerkId: evt.data.id });
   }
 
   return new Response("OK", { status: 200 });

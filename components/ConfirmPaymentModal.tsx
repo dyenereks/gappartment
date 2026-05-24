@@ -1,56 +1,58 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
+import { useMutation } from "convex/react";
 import Modal from "./Modal";
+import Icon from "./Icon";
 import { formatCurrency } from "@/lib/utils";
-import { CheckCircle, XCircle } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
-interface ConfirmPaymentModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-  shareId: string;
-  shareType: "bill" | "expense";
-  parentId: string;
-  amount: number;
-  payerName: string;
-  proofUrl: string;
-}
+type Props =
+  | {
+      open: boolean;
+      onClose: () => void;
+      shareId: Id<"billShares">;
+      shareType: "bill";
+      amount: number;
+      payerName: string;
+      proofUrl: string;
+    }
+  | {
+      open: boolean;
+      onClose: () => void;
+      shareId: Id<"expenseShares">;
+      shareType: "expense";
+      amount: number;
+      payerName: string;
+      proofUrl: string;
+    };
 
-export default function ConfirmPaymentModal({
-  open,
-  onClose,
-  onSuccess,
-  shareId,
-  shareType,
-  parentId,
-  amount,
-  payerName,
-  proofUrl,
-}: ConfirmPaymentModalProps) {
+export default function ConfirmPaymentModal(props: Props) {
+  const { open, onClose, shareId, shareType, amount, payerName, proofUrl } =
+    props;
+
+  const confirmBill = useMutation(api.billShares.confirmPayment);
+  const rejectBill = useMutation(api.billShares.rejectPayment);
+  const confirmExpense = useMutation(api.expenseShares.confirmPayment);
+  const rejectExpense = useMutation(api.expenseShares.rejectPayment);
+
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<"confirm" | "reject" | null>(null);
   const [error, setError] = useState("");
 
-  const handleAction = async (act: "confirm_payment" | "reject_payment") => {
+  const run = async (act: "confirm" | "reject") => {
     setLoading(true);
-    setAction(act === "confirm_payment" ? "confirm" : "reject");
+    setAction(act);
     setError("");
-
     try {
-      const endpoint =
-        shareType === "bill"
-          ? `/api/bills/${parentId}/shares/${shareId}`
-          : `/api/expenses/${parentId}/shares/${shareId}`;
-
-      const res = await fetch(endpoint, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: act }),
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      onSuccess();
+      if (shareType === "bill") {
+        if (act === "confirm") await confirmBill({ shareId });
+        else await rejectBill({ shareId });
+      } else {
+        if (act === "confirm") await confirmExpense({ shareId });
+        else await rejectExpense({ shareId });
+      }
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -61,74 +63,112 @@ export default function ConfirmPaymentModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Confirm Payment" size="md">
-      <div className="p-5 space-y-5">
-        <div className="bg-cream-100 rounded-xl p-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <div className="text-sm text-charcoal-300">From</div>
-              <div className="font-semibold text-charcoal-500">{payerName}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-charcoal-300">Amount</div>
-              <div className="text-xl font-bold text-brown-600">{formatCurrency(amount)}</div>
-            </div>
-          </div>
-        </div>
-
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Review payment"
+      footer={
+        <>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => run("reject")}
+            disabled={loading}
+          >
+            <Icon name="x-circle" size={14} />
+            {loading && action === "reject" ? "Rejecting…" : "Reject"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => run("confirm")}
+            disabled={loading}
+          >
+            <Icon name="check" size={14} />
+            {loading && action === "confirm" ? "Confirming…" : "Confirm received"}
+          </button>
+        </>
+      }
+    >
+      <div
+        style={{
+          background: "var(--bg-2)",
+          borderRadius: 12,
+          padding: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
         <div>
-          <p className="text-sm font-medium text-charcoal-400 mb-2">Proof of Payment</p>
-          <div className="rounded-xl overflow-hidden border border-cream-400">
-            <Image
-              src={proofUrl}
-              alt="Proof of payment"
-              width={400}
-              height={300}
-              className="w-full object-contain max-h-64 bg-cream-50"
-            />
+          <div className="muted" style={{ fontSize: 12 }}>
+            From
+          </div>
+          <div style={{ fontWeight: 500 }}>{payerName}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Amount
+          </div>
+          <div className="serif tnum" style={{ fontSize: 20 }}>
+            {formatCurrency(amount)}
           </div>
         </div>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
-            {error}
-          </div>
-        )}
-
-        <p className="text-sm text-charcoal-300 text-center">
-          Did you receive this payment from {payerName}?
-        </p>
-
-        <div className="flex gap-3">
-          <button
-            onClick={() => handleAction("reject_payment")}
-            disabled={loading}
-            className="flex-1 py-3 rounded-xl border-2 border-red-300 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {loading && action === "reject" ? (
-              "Processing..."
-            ) : (
-              <>
-                <XCircle size={16} />
-                Reject
-              </>
-            )}
-          </button>
-          <button
-            onClick={() => handleAction("confirm_payment")}
-            disabled={loading}
-            className="flex-1 py-3 rounded-xl bg-green-600 text-white text-sm font-medium hover:bg-green-500 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {loading && action === "confirm" ? (
-              "Processing..."
-            ) : (
-              <>
-                <CheckCircle size={16} />
-                Confirm Received
-              </>
-            )}
-          </button>
+      <div>
+        <div
+          className="muted"
+          style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            marginBottom: 8,
+          }}
+        >
+          Proof of payment
         </div>
+        <div
+          style={{
+            borderRadius: 12,
+            overflow: "hidden",
+            border: "1px solid var(--line)",
+            background: "var(--bg-2)",
+          }}
+        >
+          <Image
+            src={proofUrl}
+            alt="Proof of payment"
+            width={400}
+            height={300}
+            style={{
+              width: "100%",
+              height: "auto",
+              maxHeight: 320,
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        </div>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            color: "var(--danger)",
+            fontSize: 13,
+            padding: 10,
+            background: "var(--danger-soft)",
+            borderRadius: 10,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div className="muted" style={{ fontSize: 13 }}>
+        Did you receive this payment from {payerName}?
       </div>
     </Modal>
   );

@@ -4,32 +4,32 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3839",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "next build",
     "start": "next start -p 3839",
     "serve": "npm run build && next start -p 3839",
-    "lint": "eslint",
-    "postinstall": "prisma generate"
+    "lint": "eslint"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.7",
-    "@prisma/client": "^5.22.0",
     "@uploadthing/react": "^7.3.3",
     "clsx": "^2.1.1",
+    "convex": "^1.39.1",
     "date-fns": "^4.2.1",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
-    "prisma": "^5.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "svix": "^1.93.0",
     "tailwind-merge": "^3.6.0",
-    "uploadthing": "^7.7.4"
+    "uploadthing": "^7.7.4",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",

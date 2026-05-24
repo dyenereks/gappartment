@@ -1,34 +1,49 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
+import { useMutation } from "convex/react";
 import Modal from "./Modal";
+import Icon from "./Icon";
+import PaymentMethodCard, { type PaymentMethod } from "./PaymentMethodCard";
 import { formatCurrency } from "@/lib/utils";
 import { useUploadThing } from "@/lib/uploadthing";
-import { Upload, CheckCircle } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
-interface PaymentModalProps {
-  open: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
-  shareId: string;
-  shareType: "bill" | "expense";
-  parentId: string;
-  amount: number;
-  receiverName: string;
-  receiverQrUrl?: string | null;
-}
+type Props =
+  | {
+      open: boolean;
+      onClose: () => void;
+      shareId: Id<"billShares">;
+      shareType: "bill";
+      amount: number;
+      receiverName: string;
+      paymentMethods: PaymentMethod[];
+    }
+  | {
+      open: boolean;
+      onClose: () => void;
+      shareId: Id<"expenseShares">;
+      shareType: "expense";
+      amount: number;
+      receiverName: string;
+      paymentMethods: PaymentMethod[];
+    };
 
-export default function PaymentModal({
-  open,
-  onClose,
-  onSuccess,
-  shareId,
-  shareType,
-  parentId,
-  amount,
-  receiverName,
-  receiverQrUrl,
-}: PaymentModalProps) {
+export default function PaymentModal(props: Props) {
+  const {
+    open,
+    onClose,
+    shareId,
+    shareType,
+    amount,
+    receiverName,
+    paymentMethods,
+  } = props;
+
+  const submitBillProof = useMutation(api.billShares.submitProof);
+  const submitExpenseProof = useMutation(api.expenseShares.submitProof);
+
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -52,27 +67,19 @@ export default function PaymentModal({
     }
     setError("");
     setLoading(true);
-
     try {
       const uploaded = await startUpload([proofFile]);
       if (!uploaded?.[0]?.url) throw new Error("Upload failed");
-
       const proofUrl = uploaded[0].url;
-      const endpoint =
-        shareType === "bill"
-          ? `/api/bills/${parentId}/shares/${shareId}`
-          : `/api/expenses/${parentId}/shares/${shareId}`;
-
-      const res = await fetch(endpoint, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "submit_proof", proofUrl }),
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      onSuccess();
+      if (shareType === "bill") {
+        await submitBillProof({ shareId, proofUrl });
+      } else {
+        await submitExpenseProof({ shareId, proofUrl });
+      }
       onClose();
-      resetForm();
+      setProofFile(null);
+      setProofPreview(null);
+      setError("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -80,116 +87,198 @@ export default function PaymentModal({
     }
   };
 
-  const resetForm = () => {
-    setProofFile(null);
-    setProofPreview(null);
-    setError("");
-  };
+  const busy = loading || isUploading;
 
   return (
-    <Modal open={open} onClose={onClose} title="Submit Payment" size="md">
-      <div className="p-5 space-y-5">
-        {/* Amount */}
-        <div className="bg-cream-100 rounded-xl p-4 text-center">
-          <div className="text-sm text-charcoal-300 mb-1">Amount to pay</div>
-          <div className="text-3xl font-bold text-brown-600">{formatCurrency(amount)}</div>
-          <div className="text-sm text-charcoal-300 mt-1">
-            to <span className="font-medium text-charcoal-400">{receiverName}</span>
-          </div>
-        </div>
-
-        {/* Receiver QR */}
-        {receiverQrUrl ? (
-          <div>
-            <p className="text-sm font-medium text-charcoal-400 mb-2 text-center">
-              Scan to pay via e-wallet / bank transfer
-            </p>
-            <div className="flex justify-center">
-              <div className="border-2 border-cream-400 rounded-2xl p-3 bg-white inline-block">
-                <Image
-                  src={receiverQrUrl}
-                  alt="Payment QR"
-                  width={200}
-                  height={200}
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
-            <p className="text-sm text-amber-700">
-              {receiverName} hasn&apos;t uploaded a payment QR yet. Coordinate directly with them.
-            </p>
-          </div>
-        )}
-
-        {/* Upload proof */}
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-2">
-            Upload Proof of Payment
-          </label>
-          <label className="block w-full cursor-pointer">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            {proofPreview ? (
-              <div className="relative rounded-xl overflow-hidden border-2 border-brown-400">
-                <Image
-                  src={proofPreview}
-                  alt="Proof preview"
-                  width={400}
-                  height={200}
-                  className="w-full object-cover max-h-48"
-                />
-                <div className="absolute bottom-2 right-2 bg-white rounded-lg px-2 py-1 text-xs text-charcoal-400 shadow">
-                  Tap to change
-                </div>
-              </div>
-            ) : (
-              <div className="border-2 border-dashed border-cream-400 rounded-xl p-8 text-center hover:border-brown-400 hover:bg-cream-100 transition-colors">
-                <Upload size={24} className="mx-auto text-charcoal-200 mb-2" />
-                <p className="text-sm text-charcoal-300">
-                  Tap to upload screenshot
-                </p>
-                <p className="text-xs text-charcoal-200 mt-1">JPG, PNG up to 8MB</p>
-              </div>
-            )}
-          </label>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
-            {error}
-          </div>
-        )}
-
-        <div className="flex gap-3">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Submit payment"
+      footer={
+        <>
           <button
+            type="button"
+            className="btn btn-ghost"
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-cream-400 text-charcoal-400 text-sm font-medium hover:bg-cream-100 transition-colors"
+            disabled={busy}
           >
             Cancel
           </button>
           <button
+            type="button"
+            className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={loading || isUploading || !proofFile}
-            className="flex-1 py-3 rounded-xl bg-brown-600 text-white text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            disabled={busy || !proofFile}
           >
-            {loading || isUploading ? (
-              "Uploading..."
-            ) : (
-              <>
-                <CheckCircle size={16} />
-                Submit Payment
-              </>
-            )}
+            <Icon name="check" size={14} />
+            {busy ? "Uploading…" : "Submit payment"}
           </button>
+        </>
+      }
+    >
+      <div
+        style={{
+          background: "var(--bg-2)",
+          borderRadius: 14,
+          padding: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
+          className="muted"
+          style={{
+            fontSize: 11,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+          }}
+        >
+          Amount to pay
+        </div>
+        <div
+          className="serif tnum"
+          style={{ fontSize: 40, lineHeight: 1.1, marginTop: 6 }}
+        >
+          {formatCurrency(amount)}
+        </div>
+        <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>
+          to{" "}
+          <span style={{ fontWeight: 500, color: "var(--ink)" }}>
+            {receiverName}
+          </span>
         </div>
       </div>
+
+      {paymentMethods.length === 0 ? (
+        <div
+          style={{
+            background: "var(--warning-soft)",
+            color: "oklch(from var(--warning) calc(l - 0.2) c h)",
+            padding: 12,
+            borderRadius: 10,
+            fontSize: 13,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <Icon name="wallet" size={16} />
+          {receiverName} hasn&apos;t added any payment methods yet. Coordinate
+          directly with them.
+        </div>
+      ) : (
+        <div>
+          <div className="flex center between" style={{ marginBottom: 8 }}>
+            <div className="muted" style={{ fontSize: 13, fontWeight: 500 }}>
+              Pay via{" "}
+              {paymentMethods.length === 1 ? "this method" : "any of these"}
+            </div>
+            {paymentMethods.length > 1 && (
+              <div className="muted" style={{ fontSize: 11 }}>
+                Swipe →
+              </div>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              overflowX: "auto",
+              scrollSnapType: "x mandatory",
+              padding: "2px 0 8px",
+            }}
+          >
+            {paymentMethods.map((m) => (
+              <PaymentMethodCard
+                key={m._id}
+                method={m}
+                receiverName={receiverName}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="field">
+        <label className="field-label">Upload proof of payment</label>
+        <label style={{ cursor: "pointer", display: "block" }}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+          {proofPreview ? (
+            <div
+              style={{
+                position: "relative",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: "2px solid var(--accent)",
+              }}
+            >
+              <Image
+                src={proofPreview}
+                alt="Proof preview"
+                width={600}
+                height={200}
+                style={{
+                  width: "100%",
+                  height: "auto",
+                  maxHeight: 220,
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 8,
+                  right: 8,
+                  background: "var(--paper)",
+                  borderRadius: 8,
+                  padding: "2px 8px",
+                  fontSize: 11,
+                  color: "var(--ink-soft)",
+                }}
+              >
+                Tap to change
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                border: "1px dashed var(--line)",
+                borderRadius: 12,
+                padding: 28,
+                textAlign: "center",
+                color: "var(--ink-faint)",
+              }}
+            >
+              <Icon name="upload" size={22} />
+              <div style={{ fontSize: 13, marginTop: 6 }}>
+                Tap to upload screenshot
+              </div>
+              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                JPG / PNG up to 8MB
+              </div>
+            </div>
+          )}
+        </label>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            color: "var(--danger)",
+            background: "var(--danger-soft)",
+            padding: 10,
+            borderRadius: 10,
+            fontSize: 13,
+          }}
+        >
+          {error}
+        </div>
+      )}
     </Modal>
   );
 }

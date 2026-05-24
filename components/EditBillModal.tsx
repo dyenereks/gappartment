@@ -1,56 +1,53 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import Modal from "./Modal";
-import { BILL_TYPES, BILL_TYPE_LABELS, BILL_TYPE_ICONS, formatCurrency, displayName } from "@/lib/utils";
+import Icon, { type IconName } from "./Icon";
+import Avatar from "./Avatar";
+import {
+  BILL_TYPES,
+  BILL_TYPE_ICON,
+  BILL_TYPE_LABELS,
+  displayName,
+  formatCurrency,
+} from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
 interface User {
-  id: string;
+  _id: Id<"users">;
   name: string;
   nickname?: string | null;
 }
 
-interface BillShare {
-  id: string;
-  amount: number;
-  isPaid: boolean;
-  user: { id: string; name: string; nickname?: string | null };
-}
-
-interface Bill {
-  id: string;
-  type: string;
-  amount: number;
-  month: string;
-  dueDate: string | null;
-  description: string | null;
-  receiver: { id: string; name: string };
-  shares: BillShare[];
-}
+type Bill = FunctionReturnType<typeof api.bills.listByMonth>[number];
 
 interface EditBillModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
   bill: Bill | null;
   users: User[];
-  currentUserId: string;
+  currentUserId?: Id<"users">;
 }
 
 export default function EditBillModal({
   open,
   onClose,
-  onSuccess,
   bill,
   users,
   currentUserId,
 }: EditBillModalProps) {
+  const update = useMutation(api.bills.update);
+
   const [type, setType] = useState("RENT");
   const [amount, setAmount] = useState("");
+  const [acAmount, setAcAmount] = useState("");
   const [month, setMonth] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [description, setDescription] = useState("");
-  const [receiverId, setReceiverId] = useState("");
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [receiverId, setReceiverId] = useState<Id<"users"> | "">("");
+  const [selectedUserIds, setSelectedUserIds] = useState<Id<"users">[]>([]);
   const [splitMode, setSplitMode] = useState<"equal" | "custom">("equal");
   const [customShares, setCustomShares] = useState<Record<string, string>>({});
   const [markMyShareAsPaid, setMarkMyShareAsPaid] = useState(false);
@@ -58,62 +55,104 @@ export default function EditBillModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const existingBills = useQuery(
+    api.bills.listByMonth,
+    open && month ? { month } : "skip"
+  );
+  const takenTypes = new Set(
+    (existingBills ?? [])
+      .filter((b) => b._id !== bill?._id)
+      .map((b) => b.type)
+  );
+
   useEffect(() => {
-    if (bill) {
-      setType(bill.type);
-      setAmount(String(bill.amount));
-      setMonth(bill.month);
-      setDueDate(bill.dueDate ? bill.dueDate.slice(0, 10) : "");
-      setDescription(bill.description ?? "");
-      setReceiverId(bill.receiver.id);
-      setError("");
+    if (!bill) return;
+    setType(bill.type);
+    setAmount(String(bill.amount));
+    setMonth(bill.month);
+    setDueDate(
+      bill.dueDate ? new Date(bill.dueDate).toISOString().slice(0, 10) : ""
+    );
+    setDescription(bill.description ?? "");
+    setReceiverId(bill.receiverId);
+    setError("");
 
-      const existingIds = bill.shares.map((s) => s.user.id);
-      setSelectedUserIds(existingIds);
+    const existingIds = bill.shares
+      .map((s) => s.user?._id)
+      .filter((id): id is Id<"users"> => !!id);
+    setSelectedUserIds(existingIds);
 
-      const existing: Record<string, string> = {};
-      bill.shares.forEach((s) => { existing[s.user.id] = String(s.amount); });
-      setCustomShares(existing);
+    const exist: Record<string, string> = {};
+    bill.shares.forEach((s) => {
+      if (s.user) exist[s.user._id] = String(s.amount);
+    });
+    setCustomShares(exist);
 
-      if (bill.shares.length > 0) {
-        const equalAmt = bill.amount / bill.shares.length;
-        const isEqual = bill.shares.every((s) => Math.abs(s.amount - equalAmt) < 0.01);
-        setSplitMode(isEqual ? "equal" : "custom");
+    const billAc = bill.acAmount ?? 0;
+    setAcAmount(billAc > 0 ? String(billAc) : "");
+
+    if (bill.shares.length > 0) {
+      if (billAc > 0) {
+        const base = (bill.amount - billAc) / bill.shares.length;
+        const adminShareTarget = base + billAc;
+        const isEqualWithAc = bill.shares.every((s) => {
+          const expected =
+            s.user?._id === bill.addedBy?._id ? adminShareTarget : base;
+          return Math.abs(s.amount - expected) < 0.01;
+        });
+        setSplitMode(isEqualWithAc ? "equal" : "custom");
       } else {
-        setSplitMode("equal");
+        const equalAmt = bill.amount / bill.shares.length;
+        const isEqual = bill.shares.every(
+          (s) => Math.abs(s.amount - equalAmt) < 0.01
+        );
+        setSplitMode(isEqual ? "equal" : "custom");
       }
-
-      // Pre-fill "mark my share paid" from current state
-      const myShare = bill.shares.find((s) => s.user.id === currentUserId);
-      const wasPaid = myShare?.isPaid ?? false;
-      setMyShareWasPaid(wasPaid);
-      setMarkMyShareAsPaid(wasPaid);
+    } else {
+      setSplitMode("equal");
     }
+
+    const myShare = bill.shares.find((s) => s.user?._id === currentUserId);
+    const wasPaid = myShare?.isPaid ?? false;
+    setMyShareWasPaid(wasPaid);
+    setMarkMyShareAsPaid(wasPaid);
   }, [bill, currentUserId]);
 
   const totalAmount = parseFloat(amount) || 0;
-  const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
-  const equalShare = totalAmount > 0 && selectedUsers.length > 0
-    ? totalAmount / selectedUsers.length
-    : 0;
+  const selectedUsers = users.filter((u) => selectedUserIds.includes(u._id));
+  const adminInSplit = !!currentUserId && selectedUserIds.includes(currentUserId);
+  const showAcField =
+    type === "ELECTRIC" && splitMode === "equal" && adminInSplit;
+  const acNum = showAcField ? parseFloat(acAmount) || 0 : 0;
+
+  const equalShareFor = (uid: Id<"users">) => {
+    if (selectedUsers.length === 0 || totalAmount <= 0) return 0;
+    if (acNum > 0 && acNum < totalAmount) {
+      const base = (totalAmount - acNum) / selectedUsers.length;
+      return uid === currentUserId ? base + acNum : base;
+    }
+    return totalAmount / selectedUsers.length;
+  };
 
   const customTotal = selectedUsers.reduce(
-    (sum, u) => sum + (parseFloat(customShares[u.id] || "0")),
+    (sum, u) => sum + (parseFloat(customShares[u._id] || "0")),
     0
   );
 
-  const toggleUser = (uid: string) => {
+  const toggleUser = (uid: Id<"users">) =>
     setSelectedUserIds((prev) =>
       prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
     );
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
     if (!totalAmount || totalAmount <= 0) {
       setError("Enter a valid amount");
+      return;
+    }
+    if (!receiverId) {
+      setError("Pick a receiver");
       return;
     }
     if (selectedUsers.length === 0) {
@@ -121,9 +160,25 @@ export default function EditBillModal({
       return;
     }
 
-    let shares: { userId: string; amount: number; isPaid?: boolean }[];
+    let shares: { userId: Id<"users">; amount: number; isPaid?: boolean }[];
     if (splitMode === "equal") {
-      shares = selectedUsers.map((u) => ({ userId: u.id, amount: equalShare }));
+      if (acNum > 0) {
+        if (acNum >= totalAmount) {
+          setError("AC consumption must be less than the total bill");
+          return;
+        }
+        const base = (totalAmount - acNum) / selectedUsers.length;
+        shares = selectedUsers.map((u) => ({
+          userId: u._id,
+          amount: u._id === currentUserId ? base + acNum : base,
+        }));
+      } else {
+        const shareAmt = totalAmount / selectedUsers.length;
+        shares = selectedUsers.map((u) => ({
+          userId: u._id,
+          amount: shareAmt,
+        }));
+      }
     } else {
       const diff = Math.abs(customTotal - totalAmount);
       if (diff > 0.01) {
@@ -133,12 +188,11 @@ export default function EditBillModal({
         return;
       }
       shares = selectedUsers.map((u) => ({
-        userId: u.id,
-        amount: parseFloat(customShares[u.id] || "0"),
+        userId: u._id,
+        amount: parseFloat(customShares[u._id] || "0"),
       }));
     }
 
-    // Only send isPaid for the admin's own share when state changed
     if (
       currentUserId &&
       selectedUserIds.includes(currentUserId) &&
@@ -151,21 +205,17 @@ export default function EditBillModal({
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/bills/${bill!.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          amount: totalAmount,
-          month,
-          dueDate: dueDate || null,
-          description: description.trim() || null,
-          receiverId,
-          shares,
-        }),
+      await update({
+        billId: bill!._id,
+        type,
+        amount: totalAmount,
+        month,
+        dueDate: dueDate ? new Date(dueDate).getTime() : null,
+        description: description.trim() || null,
+        receiverId: receiverId as Id<"users">,
+        shares,
+        acAmount: showAcField && acNum > 0 ? acNum : null,
       });
-      if (!res.ok) throw new Error(await res.text());
-      onSuccess();
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update bill");
@@ -175,210 +225,322 @@ export default function EditBillModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Edit Bill" size="lg">
-      <form onSubmit={handleSubmit} className="p-5 space-y-5">
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-2">Bill Type</label>
-          <div className="grid grid-cols-3 gap-2">
-            {BILL_TYPES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setType(t)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 text-sm font-medium transition-all ${
-                  type === t
-                    ? "border-brown-600 bg-brown-600 text-white"
-                    : "border-cream-400 bg-white text-charcoal-400 hover:border-brown-300"
-                }`}
-              >
-                <span className="text-xl">{BILL_TYPE_ICONS[t]}</span>
-                {BILL_TYPE_LABELS[t]}
-              </button>
-            ))}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit bill"
+      size="lg"
+      footer={
+        <>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={loading || takenTypes.has(type)}
+          >
+            <Icon name="check" size={14} />
+            {loading ? "Saving…" : "Save changes"}
+          </button>
+        </>
+      }
+    >
+      <form onSubmit={handleSubmit} style={{ display: "contents" }}>
+        <div className="field">
+          <label className="field-label">Type</label>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${BILL_TYPES.length}, 1fr)`,
+              gap: 8,
+            }}
+          >
+            {BILL_TYPES.map((t) => {
+              const taken = takenTypes.has(t);
+              const selected = type === t;
+              const icon = (BILL_TYPE_ICON[t] ?? "receipt") as IconName;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => !taken && setType(t)}
+                  disabled={taken}
+                  title={taken ? "Already added for this month" : undefined}
+                  style={{
+                    padding: "14px 8px",
+                    border:
+                      "1px solid " +
+                      (selected ? "var(--ink)" : "var(--line)"),
+                    background: selected
+                      ? "var(--ink)"
+                      : taken
+                        ? "var(--bg-2)"
+                        : "var(--paper)",
+                    color: selected
+                      ? "var(--bg)"
+                      : taken
+                        ? "var(--ink-faint)"
+                        : "var(--ink)",
+                    borderRadius: 10,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: taken ? "not-allowed" : "pointer",
+                  }}
+                >
+                  <Icon name={icon} size={18} />
+                  <span style={{ fontSize: 12 }}>{BILL_TYPE_LABELS[t]}</span>
+                  {taken && (
+                    <span style={{ fontSize: 10 }} className="muted">
+                      Already added
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-              Total Amount (₱)
-            </label>
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: "1fr 1fr" }}
+        >
+          <div className="field">
+            <label className="field-label">Total amount</label>
             <input
+              className="input tnum"
               type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
               min="0"
               step="0.01"
-              required
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">Month</label>
+          <div className="field">
+            <label className="field-label">Period</label>
             <input
+              className="input"
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              required
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-              Due Date <span className="text-charcoal-200">(optional)</span>
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: "1fr 1fr" }}
+        >
+          <div className="field">
+            <label className="field-label">
+              Due date <span className="muted">(optional)</span>
             </label>
             <input
+              className="input"
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-              Receiver
-            </label>
+          <div className="field">
+            <label className="field-label">Receiver</label>
             <select
+              className="select"
               value={receiverId}
-              onChange={(e) => setReceiverId(e.target.value)}
-              className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
+              onChange={(e) => setReceiverId(e.target.value as Id<"users">)}
             >
               {users.map((u) => (
-                <option key={u.id} value={u.id}>{displayName(u)}</option>
+                <option key={u._id} value={u._id}>
+                  {displayName(u)}
+                </option>
               ))}
             </select>
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-            Notes <span className="text-charcoal-200">(optional)</span>
+        <div className="field">
+          <label className="field-label">
+            Notes <span className="muted">(optional)</span>
           </label>
           <input
-            type="text"
+            className="input"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="e.g. April reading"
-            className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
           />
         </div>
 
-        {/* Tenant selection */}
-        <div>
-          <label className="block text-sm font-medium text-charcoal-400 mb-2">
-            Tenants sharing this bill
-          </label>
-          <div className="space-y-2">
-            {users.map((u) => (
-              <label
-                key={u.id}
-                className="flex items-center gap-3 p-3 bg-cream-100 rounded-xl cursor-pointer hover:bg-cream-200 transition-colors"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedUserIds.includes(u.id)}
-                  onChange={() => toggleUser(u.id)}
-                  className="w-4 h-4 accent-brown-600 rounded"
-                />
-                <div className="w-7 h-7 rounded-full bg-brown-300 flex items-center justify-center text-white text-xs font-bold">
-                  {displayName(u).charAt(0).toUpperCase()}
-                </div>
-                <span className="text-sm text-charcoal-400">{displayName(u)}</span>
-              </label>
-            ))}
+        {showAcField && (
+          <div className="field">
+            <label className="field-label">
+              AC consumption (₱){" "}
+              <span className="muted">(charged entirely to you)</span>
+            </label>
+            <input
+              className="input tnum"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={acAmount}
+              onChange={(e) => setAcAmount(e.target.value)}
+            />
+          </div>
+        )}
+
+        <div className="field">
+          <label className="field-label">Tenants sharing this bill</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {users.map((u) => {
+              const on = selectedUserIds.includes(u._id);
+              return (
+                <button
+                  key={u._id}
+                  type="button"
+                  onClick={() => toggleUser(u._id)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 12px",
+                    border:
+                      "1px solid " + (on ? "var(--ink)" : "var(--line)"),
+                    background: on ? "var(--ink)" : "var(--paper)",
+                    color: on ? "var(--bg)" : "var(--ink)",
+                    borderRadius: 999,
+                    fontSize: 13,
+                  }}
+                >
+                  <Avatar user={u} size="sm" />
+                  {displayName(u)}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Split */}
         {selectedUsers.length > 0 && (
-          <div>
-            <label className="block text-sm font-medium text-charcoal-400 mb-2">
-              Split Method
-            </label>
-            <div className="flex gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setSplitMode("equal")}
-                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                  splitMode === "equal"
-                    ? "border-brown-600 bg-brown-600 text-white"
-                    : "border-cream-400 text-charcoal-400 hover:border-brown-300"
-                }`}
-              >
-                Equal Split
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitMode("custom")}
-                className={`flex-1 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                  splitMode === "custom"
-                    ? "border-brown-600 bg-brown-600 text-white"
-                    : "border-cream-400 text-charcoal-400 hover:border-brown-300"
-                }`}
-              >
-                Custom Split
-              </button>
+          <div className="field">
+            <label className="field-label">Split</label>
+            <div className="seg">
+              {(["equal", "custom"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={splitMode === m ? "active" : ""}
+                  onClick={() => setSplitMode(m)}
+                >
+                  {m === "equal" ? "Equal" : "Custom"}
+                </button>
+              ))}
             </div>
-
-            <div className="space-y-2 bg-cream-100 rounded-xl p-3">
+            <div
+              style={{
+                marginTop: 10,
+                background: "var(--bg-2)",
+                borderRadius: 12,
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
               {selectedUsers.map((u) => (
-                <div key={u.id} className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-brown-300 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {displayName(u).charAt(0).toUpperCase()}
+                <div key={u._id} className="flex center gap-3">
+                  <Avatar user={u} size="sm" />
+                  <div style={{ flex: 1, fontSize: 13 }}>
+                    {displayName(u)}
                   </div>
-                  <span className="flex-1 text-sm text-charcoal-400">{displayName(u)}</span>
                   {splitMode === "equal" ? (
-                    <span className="text-sm font-medium text-brown-600">
-                      {equalShare > 0 ? formatCurrency(equalShare) : "—"}
-                    </span>
+                    <div
+                      className="serif tnum"
+                      style={{ fontSize: 16, color: "var(--accent)" }}
+                    >
+                      {totalAmount > 0
+                        ? formatCurrency(equalShareFor(u._id))
+                        : "—"}
+                    </div>
                   ) : (
                     <input
+                      className="input tnum"
                       type="number"
-                      value={customShares[u.id] ?? ""}
-                      onChange={(e) =>
-                        setCustomShares((prev) => ({ ...prev, [u.id]: e.target.value }))
-                      }
-                      placeholder="0.00"
                       min="0"
                       step="0.01"
-                      className="w-28 px-2 py-1.5 border border-cream-400 rounded-lg text-sm focus:outline-none focus:border-brown-500 bg-white text-right"
+                      placeholder="0.00"
+                      value={customShares[u._id] ?? ""}
+                      onChange={(e) =>
+                        setCustomShares((p) => ({
+                          ...p,
+                          [u._id]: e.target.value,
+                        }))
+                      }
+                      style={{
+                        width: 120,
+                        textAlign: "right",
+                        padding: "6px 10px",
+                      }}
                     />
                   )}
                 </div>
               ))}
               {splitMode === "custom" && amount && (
-                <div className="pt-2 border-t border-cream-400 flex justify-between text-sm">
-                  <span className="text-charcoal-300">Total assigned</span>
+                <div
+                  className="flex center between"
+                  style={{
+                    paddingTop: 8,
+                    borderTop: "1px solid var(--line)",
+                    fontSize: 13,
+                  }}
+                >
+                  <span className="muted">Total assigned</span>
                   <span
-                    className={`font-semibold ${
-                      Math.abs(customTotal - totalAmount) < 0.01 ? "text-green-600" : "text-red-500"
-                    }`}
+                    className="tnum"
+                    style={{
+                      fontWeight: 600,
+                      color:
+                        Math.abs(customTotal - totalAmount) < 0.01
+                          ? "var(--success)"
+                          : "var(--danger)",
+                    }}
                   >
-                    {formatCurrency(customTotal)} / {formatCurrency(totalAmount)}
+                    {formatCurrency(customTotal)} /{" "}
+                    {formatCurrency(totalAmount)}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Mark my share as already paid */}
             {currentUserId && selectedUserIds.includes(currentUserId) && (
-              <label className="mt-3 flex items-center gap-3 p-3 bg-green-50 border border-green-200 rounded-xl cursor-pointer hover:bg-green-100 transition-colors">
+              <label
+                className="flex center gap-3"
+                style={{
+                  cursor: "pointer",
+                  marginTop: 10,
+                  padding: 10,
+                  background: "var(--success-soft)",
+                  borderRadius: 10,
+                  color: "var(--success)",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={markMyShareAsPaid}
                   onChange={(e) => setMarkMyShareAsPaid(e.target.checked)}
-                  className="w-4 h-4 accent-green-600 rounded"
+                  style={{ accentColor: "var(--success)" }}
                 />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-green-700">
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, fontSize: 13 }}>
                     Mark my share as already paid
                   </div>
-                  <div className="text-xs text-green-600">
-                    Useful if you (as receiver) are also a tenant on this bill.
+                  <div style={{ fontSize: 11, opacity: 0.85 }}>
+                    Useful when you (as receiver) are also a tenant.
                   </div>
                 </div>
               </label>
@@ -387,27 +549,18 @@ export default function EditBillModal({
         )}
 
         {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
+          <div
+            style={{
+              color: "var(--danger)",
+              background: "var(--danger-soft)",
+              padding: 10,
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}
-
-        <div className="flex gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-cream-400 text-charcoal-400 text-sm font-medium hover:bg-cream-100 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex-1 py-3 rounded-xl bg-brown-600 text-white text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60"
-          >
-            {loading ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
       </form>
     </Modal>
   );

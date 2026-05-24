@@ -1,29 +1,41 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
+import { useConvexAuth, useMutation } from "convex/react";
+import Icon from "@/components/Icon";
+import { api } from "@/convex/_generated/api";
 
 export default function SetupProfilePage() {
   const router = useRouter();
+  const { isAuthenticated } = useConvexAuth();
+  const { user: clerkUser, isLoaded } = useUser();
+  const sync = useMutation(api.users.sync);
+  const updateProfile = useMutation(api.users.updateProfile);
+
   const [nickname, setNickname] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [synced, setSynced] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isLoaded || !clerkUser || synced) return;
+    const email = clerkUser.emailAddresses[0]?.emailAddress ?? "";
+    const name =
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+      email;
+    sync({ name, email, imageUrl: clerkUser.imageUrl ?? null })
+      .then(() => setSynced(true))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Failed to sync")
+      );
+  }, [isAuthenticated, isLoaded, clerkUser, sync, synced]);
 
   const finish = async (nick: string | null) => {
     setSaving(true);
     setError("");
     try {
-      // Ensures user is synced to DB (upsert happens in GET /api/users)
-      await fetch("/api/users");
-
-      if (nick) {
-        const res = await fetch("/api/users", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nickname: nick }),
-        });
-        if (!res.ok) throw new Error(await res.text());
-      }
-
+      if (nick) await updateProfile({ nickname: nick });
       router.push("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -37,55 +49,91 @@ export default function SetupProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-cream-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-4xl mb-3">🏠</div>
-          <h1 className="text-2xl font-bold text-brown-600">Welcome!</h1>
-          <p className="text-charcoal-300 text-sm mt-1">
-            Set a nickname so your roommates recognise you easily.
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--bg)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 440 }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div
+            className="brand-mark"
+            style={{
+              margin: "0 auto 12px",
+              width: 44,
+              height: 44,
+              fontSize: 20,
+            }}
+          >
+            G
+          </div>
+          <h1
+            className="serif"
+            style={{ fontSize: 28, letterSpacing: "-0.02em" }}
+          >
+            Welcome.
+          </h1>
+          <p className="muted" style={{ marginTop: 4 }}>
+            Pick a nickname so your roommates recognise you.
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 border border-cream-300 shadow-sm">
-          <form onSubmit={handleSave} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-charcoal-400 mb-1.5">
-                Nickname <span className="text-charcoal-200">(optional)</span>
+        <div className="card card-lg">
+          <form onSubmit={handleSave} style={{ display: "grid", gap: 14 }}>
+            <div className="field">
+              <label className="field-label">
+                Nickname <span className="muted">(optional)</span>
               </label>
               <input
+                className="input"
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="e.g. Jay, Kim, Roomie"
                 maxLength={30}
                 autoFocus
-                className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
               />
-              <p className="text-xs text-charcoal-200 mt-1.5">
-                This replaces your full name everywhere in the app.
-              </p>
+              <div className="muted" style={{ fontSize: 12 }}>
+                Replaces your full name everywhere in the app.
+              </div>
             </div>
 
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-xl border border-red-200">
+              <div
+                style={{
+                  color: "var(--danger)",
+                  background: "var(--danger-soft)",
+                  padding: 10,
+                  borderRadius: 10,
+                  fontSize: 13,
+                }}
+              >
                 {error}
               </div>
             )}
 
             <button
               type="submit"
-              disabled={saving}
-              className="w-full py-3 bg-brown-600 text-white rounded-xl text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60"
+              className="btn btn-primary"
+              disabled={saving || !synced}
             >
-              {saving ? "Saving..." : "Save & Continue"}
+              <Icon name="check" size={14} />
+              {saving
+                ? "Saving…"
+                : !synced
+                  ? "Setting up…"
+                  : "Save & continue"}
             </button>
-
             <button
               type="button"
+              className="btn btn-ghost"
               onClick={() => finish(null)}
-              disabled={saving}
-              className="w-full py-2.5 text-sm text-charcoal-300 hover:text-charcoal-400 transition-colors disabled:opacity-60"
+              disabled={saving || !synced}
             >
               Skip for now
             </button>

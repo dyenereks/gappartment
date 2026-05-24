@@ -1,102 +1,53 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useQuery, useMutation } from "convex/react";
 import Image from "next/image";
-import { Upload, QrCode, CheckCircle, User, AtSign } from "lucide-react";
-import { useUploadThing } from "@/lib/uploadthing";
+import PageHead from "@/components/PageHead";
+import Avatar from "@/components/Avatar";
+import Badge from "@/components/Badge";
+import Icon from "@/components/Icon";
+import PaymentMethodModal from "@/components/PaymentMethodModal";
+import PushToggle from "@/components/PushToggle";
+import { displayName, formatLongDate } from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 
-interface UserProfile {
-  id: string;
-  name: string;
-  nickname?: string | null;
-  email: string;
-  imageUrl?: string | null;
-  isAdmin: boolean;
+interface PaymentMethod {
+  _id: Id<"paymentMethods">;
+  provider: string;
+  accountNumber?: string | null;
   qrCodeUrl?: string | null;
 }
 
 export default function ProfilePage() {
-  const { user: clerkUser } = useUser();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [qrFile, setQrFile] = useState<File | null>(null);
-  const [qrPreview, setQrPreview] = useState<string | null>(null);
+  const profile = useQuery(api.users.current);
+  const methods = useQuery(api.paymentMethods.mine);
+  const updateProfile = useMutation(api.users.updateProfile);
+
+  const [editing, setEditing] = useState(false);
+  const [nickname, setNickname] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [nickname, setNickname] = useState("");
-  const [nicknameSaving, setNicknameSaving] = useState(false);
-  const [nicknameSaved, setNicknameSaved] = useState(false);
-  const [nicknameError, setNicknameError] = useState("");
-
-  const { startUpload, isUploading } = useUploadThing("qrCode");
+  const [methodModal, setMethodModal] = useState<{
+    open: boolean;
+    method: PaymentMethod | null;
+  }>({ open: false, method: null });
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      const res = await fetch("/api/users");
-      const users = await res.json();
-      const me = users.find((u: UserProfile) => u.id === clerkUser?.id);
-      if (me) {
-        setProfile(me);
-        setNickname(me.nickname ?? "");
-      }
-    };
-    if (clerkUser?.id) fetchProfile();
-  }, [clerkUser?.id]);
+    if (profile) setNickname(profile.nickname ?? "");
+  }, [profile]);
 
-  const handleQrChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setQrFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setQrPreview(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleSaveNickname = async () => {
-    setNicknameError("");
-    setNicknameSaving(true);
-    try {
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname: nickname.trim() || null }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setProfile((prev) => prev ? { ...prev, nickname: updated.nickname } : prev);
-      setNicknameSaved(true);
-      setTimeout(() => setNicknameSaved(false), 3000);
-    } catch (err: unknown) {
-      setNicknameError(err instanceof Error ? err.message : "Failed to save nickname");
-    } finally {
-      setNicknameSaving(false);
-    }
-  };
-
-  const handleSaveQr = async () => {
-    if (!qrFile) return;
+  const handleSave = async () => {
     setError("");
     setSaving(true);
-
     try {
-      const uploaded = await startUpload([qrFile]);
-      if (!uploaded?.[0]?.url) throw new Error("Upload failed");
-
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrCodeUrl: uploaded[0].url }),
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      const updated = await res.json();
-      setProfile((prev) => prev ? { ...prev, qrCodeUrl: updated.qrCodeUrl } : prev);
-      setQrFile(null);
-      setQrPreview(null);
+      await updateProfile({ nickname: nickname.trim() || null });
+      setEditing(false);
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      setTimeout(() => setSaved(false), 2500);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save QR code");
+      setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -104,171 +55,290 @@ export default function ProfilePage() {
 
   if (!profile) {
     return (
-      <div className="space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white rounded-2xl p-5 animate-pulse h-20 border border-cream-300" />
-        ))}
+      <div>
+        <PageHead
+          eyebrow="Account"
+          title={`Your <em>profile</em>`}
+          sub="Personal details, payment methods, and preferences."
+        />
+        <div className="card card-lg" style={{ minHeight: 280 }} aria-hidden />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold text-brown-600">My Profile</h1>
+    <div>
+      <PageHead
+        eyebrow="Account"
+        title={`Your <em>profile</em>`}
+        sub="Personal details, payment methods, and preferences."
+      />
 
-      {/* User info */}
-      <div className="bg-white rounded-2xl p-6 border border-cream-300 shadow-sm">
-        <div className="flex items-center gap-4">
+      <div className="cols-1-2">
+        {/* Identity card */}
+        <div className="card card-lg" style={{ textAlign: "center", padding: 32 }}>
           {profile.imageUrl ? (
-            <Image
-              src={profile.imageUrl}
-              alt={profile.name}
-              width={64}
-              height={64}
-              className="w-16 h-16 rounded-full object-cover"
+            <span
+              aria-hidden
+              className="avatar avatar-xl"
+              style={{
+                margin: "0 auto",
+                background: `center/cover url(${profile.imageUrl})`,
+                color: "transparent",
+              }}
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-brown-400 flex items-center justify-center">
-              <User size={28} className="text-white" />
+            <div style={{ display: "grid", placeItems: "center" }}>
+              <Avatar user={profile} size="xl" />
             </div>
           )}
-          <div>
-            <div className="font-semibold text-charcoal-500 text-lg">{profile.name}</div>
-            <div className="text-sm text-charcoal-300">{profile.email}</div>
-            {profile.isAdmin && (
-              <span className="mt-1 inline-block text-xs bg-brown-100 text-brown-600 px-2.5 py-0.5 rounded-full font-medium">
-                Admin
-              </span>
+          <div
+            className="serif"
+            style={{ fontSize: 28, letterSpacing: "-0.01em", marginTop: 16 }}
+          >
+            {displayName(profile)}
+          </div>
+          <div
+            className="flex center gap-2"
+            style={{
+              justifyContent: "center",
+              marginTop: 6,
+              flexWrap: "wrap",
+            }}
+          >
+            <Badge kind="ink">{profile.isAdmin ? "Admin" : "Tenant"}</Badge>
+            <Badge dot>Joined {formatLongDate(profile._creationTime)}</Badge>
+          </div>
+          <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>
+            {profile.email}
+          </div>
+
+          {saved && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: "8px 12px",
+                background: "var(--success-soft)",
+                color: "var(--success)",
+                borderRadius: 10,
+                fontSize: 13,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Icon name="check" size={14} /> Saved
+            </div>
+          )}
+        </div>
+
+        {/* Details, payment methods */}
+        <div>
+          <div className="card card-lg">
+            <div className="card-head">
+              <h2 className="card-title">Personal details</h2>
+              {editing ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setEditing(false);
+                      setNickname(profile.nickname ?? "");
+                      setError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSave}
+                    disabled={saving}
+                  >
+                    <Icon name="check" size={14} />{" "}
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => setEditing(true)}
+                >
+                  <Icon name="edit" size={14} /> Edit nickname
+                </button>
+              )}
+            </div>
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: "1fr 1fr" }}
+            >
+              <div className="field">
+                <label className="field-label">Full name</label>
+                <div style={{ padding: "10px 0", fontWeight: 500 }}>
+                  {profile.name}
+                </div>
+              </div>
+              <div className="field">
+                <label className="field-label">Nickname</label>
+                {editing ? (
+                  <input
+                    className="input"
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    placeholder="Pick a nickname"
+                    maxLength={30}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      padding: "10px 0",
+                      fontWeight: 500,
+                      color: profile.nickname
+                        ? "var(--ink)"
+                        : "var(--ink-faint)",
+                    }}
+                  >
+                    {profile.nickname || "—"}
+                  </div>
+                )}
+              </div>
+              <div className="field">
+                <label className="field-label">Email</label>
+                <div style={{ padding: "10px 0", fontWeight: 500 }}>
+                  {profile.email}
+                </div>
+              </div>
+              <div className="field">
+                <label className="field-label">Role</label>
+                <div style={{ padding: "10px 0", fontWeight: 500 }}>
+                  {profile.isAdmin ? "Admin" : "Tenant"}
+                </div>
+              </div>
+            </div>
+            {error && (
+              <div
+                style={{
+                  marginTop: 12,
+                  color: "var(--danger)",
+                  fontSize: 13,
+                  padding: 10,
+                  background: "var(--danger-soft)",
+                  borderRadius: 10,
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+
+          <div className="card card-lg" style={{ marginTop: 16 }}>
+            <div className="card-head">
+              <h2 className="card-title">Notifications</h2>
+            </div>
+            <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+              Get a push notification when a new bill is added or someone
+              sends you a payment. Works in Chrome, Edge, Firefox, and
+              iOS Safari (when installed as a home-screen app).
+            </p>
+            <PushToggle />
+          </div>
+
+          <div className="card card-lg" style={{ marginTop: 16 }}>
+            <div className="card-head">
+              <h2 className="card-title">Payment methods</h2>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setMethodModal({ open: true, method: null })}
+              >
+                <Icon name="plus" size={14} /> Add method
+              </button>
+            </div>
+            <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+              Add one or more accounts (GCash, Maya, BDO, or any other bank /
+              e-wallet) so tenants can pay you. Each method needs a name and at
+              least an account number or a QR code.
+            </p>
+
+            {methods === undefined ? (
+              <div className="muted" style={{ padding: 24 }}>
+                Loading…
+              </div>
+            ) : methods.length === 0 ? (
+              <div
+                style={{
+                  padding: 32,
+                  textAlign: "center",
+                  border: "1px dashed var(--line)",
+                  borderRadius: 12,
+                  color: "var(--ink-faint)",
+                }}
+              >
+                <Icon name="wallet" size={28} />
+                <div style={{ marginTop: 8 }}>
+                  No payment methods yet — add one so others can pay you.
+                </div>
+              </div>
+            ) : (
+              methods.map((m) => (
+                <button
+                  type="button"
+                  key={m._id}
+                  onClick={() =>
+                    setMethodModal({ open: true, method: m })
+                  }
+                  className="row"
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    border: "1px solid var(--line)",
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 10,
+                    background: "var(--paper-2)",
+                  }}
+                >
+                  {m.qrCodeUrl ? (
+                    <Image
+                      src={m.qrCodeUrl}
+                      alt={`${m.provider} QR`}
+                      width={48}
+                      height={48}
+                      className="row-icon"
+                      style={{ objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      className="row-icon"
+                      style={{
+                        background: "var(--accent-soft)",
+                        color: "var(--accent)",
+                      }}
+                    >
+                      <Icon name="wallet" size={18} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="row-title">{m.provider}</div>
+                    <div className="row-meta tnum">
+                      {m.accountNumber ? m.accountNumber : "QR only"}
+                    </div>
+                  </div>
+                  <Icon name="chevron-right" size={14} />
+                </button>
+              ))
             )}
           </div>
         </div>
       </div>
 
-      {/* Nickname section */}
-      <div className="bg-white rounded-2xl p-6 border border-cream-300 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <AtSign size={20} className="text-brown-500" />
-          <h2 className="font-semibold text-charcoal-500">Display Nickname</h2>
-        </div>
-        <p className="text-sm text-charcoal-300 mb-4">
-          Set a short nickname to use instead of your full name across the app.
-        </p>
-        <input
-          type="text"
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          placeholder={profile.name}
-          maxLength={30}
-          className="w-full px-3 py-2.5 border border-cream-400 rounded-xl text-sm focus:outline-none focus:border-brown-500 bg-white"
-        />
-        {nicknameError && (
-          <div className="mt-2 text-sm text-red-600">{nicknameError}</div>
-        )}
-        {nicknameSaved && (
-          <div className="mt-2 text-sm text-green-600 flex items-center gap-1.5">
-            <CheckCircle size={14} /> Nickname saved!
-          </div>
-        )}
-        <button
-          onClick={handleSaveNickname}
-          disabled={nicknameSaving}
-          className="mt-3 w-full py-2.5 bg-brown-600 text-white rounded-xl text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60"
-        >
-          {nicknameSaving ? "Saving..." : "Save Nickname"}
-        </button>
-      </div>
-
-      {/* QR Code section */}
-      <div className="bg-white rounded-2xl p-6 border border-cream-300 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <QrCode size={20} className="text-brown-500" />
-          <h2 className="font-semibold text-charcoal-500">Payment QR Code</h2>
-        </div>
-        <p className="text-sm text-charcoal-300 mb-4">
-          Upload your e-wallet (GCash, Maya) or bank QR code so other tenants can pay you easily.
-        </p>
-
-        {/* Current QR */}
-        {profile.qrCodeUrl && !qrPreview && (
-          <div className="mb-4">
-            <p className="text-xs text-charcoal-200 mb-2 font-medium">Current QR Code</p>
-            <div className="inline-block border-2 border-cream-400 rounded-2xl p-3 bg-cream-50">
-              <Image
-                src={profile.qrCodeUrl}
-                alt="Payment QR"
-                width={180}
-                height={180}
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Upload new QR */}
-        <label className="block cursor-pointer">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleQrChange}
-            className="hidden"
-          />
-          {qrPreview ? (
-            <div className="relative rounded-xl overflow-hidden border-2 border-brown-400 inline-block">
-              <Image
-                src={qrPreview}
-                alt="QR preview"
-                width={200}
-                height={200}
-                className="rounded-xl"
-              />
-              <div className="absolute bottom-2 right-2 bg-white rounded-lg px-2 py-1 text-xs text-charcoal-400 shadow">
-                Tap to change
-              </div>
-            </div>
-          ) : (
-            <div className="border-2 border-dashed border-cream-400 rounded-xl p-8 text-center hover:border-brown-400 hover:bg-cream-100 transition-colors">
-              <Upload size={24} className="mx-auto text-charcoal-200 mb-2" />
-              <p className="text-sm text-charcoal-300 font-medium">
-                {profile.qrCodeUrl ? "Upload new QR code" : "Upload QR code"}
-              </p>
-              <p className="text-xs text-charcoal-200 mt-1">PNG, JPG up to 4MB</p>
-            </div>
-          )}
-        </label>
-
-        {error && (
-          <div className="mt-3 bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl border border-red-200">
-            {error}
-          </div>
-        )}
-
-        {saved && (
-          <div className="mt-3 bg-green-50 text-green-600 text-sm px-4 py-3 rounded-xl border border-green-200 flex items-center gap-2">
-            <CheckCircle size={16} />
-            QR code saved successfully!
-          </div>
-        )}
-
-        {qrFile && (
-          <button
-            onClick={handleSaveQr}
-            disabled={saving || isUploading}
-            className="mt-4 w-full py-3 bg-brown-600 text-white rounded-xl text-sm font-medium hover:bg-brown-500 transition-colors disabled:opacity-60"
-          >
-            {saving || isUploading ? "Saving..." : "Save QR Code"}
-          </button>
-        )}
-      </div>
-
-      {/* Info card */}
-      <div className="bg-cream-200 rounded-2xl p-4 border border-cream-400">
-        <p className="text-sm text-charcoal-400 font-medium mb-1">How payments work</p>
-        <ul className="text-xs text-charcoal-300 space-y-1.5 list-disc list-inside">
-          <li>Others scan your QR to send payment via e-wallet or bank</li>
-          <li>They upload a screenshot as proof of payment</li>
-          <li>You review and confirm receipt to mark them as paid</li>
-        </ul>
-      </div>
+      <PaymentMethodModal
+        open={methodModal.open}
+        onClose={() => setMethodModal({ open: false, method: null })}
+        method={methodModal.method}
+      />
     </div>
   );
 }

@@ -1,409 +1,704 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
-import { CheckCircle, Clock, AlertCircle, QrCode } from "lucide-react";
-import MonthSelector from "@/components/MonthSelector";
+import { useEffect, useState } from "react";
+import { useQuery } from "convex/react";
+import PageHead from "@/components/PageHead";
+import MonthPicker from "@/components/MonthPicker";
+import Avatar from "@/components/Avatar";
+import Badge from "@/components/Badge";
+import Icon from "@/components/Icon";
 import PaymentModal from "@/components/PaymentModal";
+import MultiPaymentModal, {
+  type SelectedShare,
+} from "@/components/MultiPaymentModal";
 import ConfirmPaymentModal from "@/components/ConfirmPaymentModal";
-import { formatCurrency, getCurrentMonth, formatMonth, BILL_TYPE_LABELS, BILL_TYPE_ICONS, displayName } from "@/lib/utils";
+import {
+  BILL_TYPE_ICON,
+  BILL_TYPE_LABELS,
+  displayName,
+  formatCurrency,
+  formatMonth,
+  getCurrentMonth,
+} from "@/lib/utils";
+import { api } from "@/convex/_generated/api";
+import type { IconName } from "@/components/Icon";
+import type { Id, Doc } from "@/convex/_generated/dataModel";
 
-interface BillShare {
-  id: string;
-  amount: number;
-  isPaid: boolean;
-  proofUrl: string | null;
-  paidAt: string | null;
-  confirmedAt: string | null;
-  user: { id: string; name: string; nickname?: string | null };
-}
-
-interface Bill {
-  id: string;
-  type: string;
-  amount: number;
-  month: string;
-  receiver: { id: string; name: string; nickname?: string | null; qrCodeUrl?: string | null };
-  shares: BillShare[];
-}
-
-interface ExpenseShare {
-  id: string;
-  amount: number;
-  isPaid: boolean;
-  proofUrl: string | null;
-  paidAt: string | null;
-  confirmedAt: string | null;
-  user: { id: string; name: string; nickname?: string | null };
-}
-
-interface Expense {
-  id: string;
-  title: string;
-  amount: number;
-  month: string;
-  addedBy: { id: string; name: string; nickname?: string | null; qrCodeUrl?: string | null };
-  shares: ExpenseShare[];
-}
-
+type PaymentMethod = Doc<"paymentMethods">;
 type Tab = "outgoing" | "incoming";
 
 export default function PaymentsPage() {
-  const { user: clerkUser } = useUser();
   const [month, setMonth] = useState(getCurrentMonth());
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("outgoing");
-  const [payModal, setPayModal] = useState<{
-    shareId: string;
-    parentId: string;
-    type: "bill" | "expense";
-    amount: number;
-    receiverName: string;
-    receiverQrUrl?: string | null;
-  } | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{
-    shareId: string;
-    parentId: string;
-    type: "bill" | "expense";
-    amount: number;
-    payerName: string;
-    proofUrl: string;
-  } | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [billsRes, expensesRes] = await Promise.all([
-        fetch(`/api/bills?month=${month}`),
-        fetch(`/api/expenses?month=${month}`),
-      ]);
-      const [b, e] = await Promise.all([billsRes.json(), expensesRes.json()]);
-      setBills(b);
-      setExpenses(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [month]);
+  const me = useQuery(api.users.current);
+  const bills = useQuery(api.bills.listByMonth, { month });
+  const expenses = useQuery(api.expenses.listByMonth, { month });
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const [payModal, setPayModal] = useState<
+    | {
+        shareId: Id<"billShares">;
+        type: "bill";
+        amount: number;
+        receiverName: string;
+        paymentMethods: PaymentMethod[];
+      }
+    | {
+        shareId: Id<"expenseShares">;
+        type: "expense";
+        amount: number;
+        receiverName: string;
+        paymentMethods: PaymentMethod[];
+      }
+    | null
+  >(null);
 
-  const userId = clerkUser?.id;
+  const [confirmModal, setConfirmModal] = useState<
+    | {
+        shareId: Id<"billShares">;
+        type: "bill";
+        amount: number;
+        payerName: string;
+        proofUrl: string;
+      }
+    | {
+        shareId: Id<"expenseShares">;
+        type: "expense";
+        amount: number;
+        payerName: string;
+        proofUrl: string;
+      }
+    | null
+  >(null);
 
-  // Outgoing: what I need to pay
-  const outgoingBills = bills
-    .filter((b) => b.receiver.id !== userId)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [multiPayOpen, setMultiPayOpen] = useState(false);
+
+  useEffect(() => {
+    setSelectedKeys(new Set());
+    setMultiPayOpen(false);
+  }, [tab, month]);
+
+  const loading = me === undefined || bills === undefined || expenses === undefined;
+  const myId = me?._id;
+
+  // ===== Outgoing
+  const outgoingBills = (bills ?? [])
+    .filter((b) => b.receiver?._id !== myId)
     .flatMap((b) =>
       b.shares
-        .filter((s) => s.user.id === userId)
+        .filter((s) => s.user?._id === myId)
         .map((s) => ({ ...s, bill: b }))
     );
-
-  const outgoingExpenses = expenses
-    .filter((e) => e.addedBy.id !== userId)
+  const outgoingExpenses = (expenses ?? [])
+    .filter((e) => e.addedBy?._id !== myId)
     .flatMap((e) =>
       e.shares
-        .filter((s) => s.user.id === userId)
+        .filter((s) => s.user?._id === myId)
         .map((s) => ({ ...s, expense: e }))
     );
 
-  // Incoming: what others owe me
-  const incomingBills = bills
-    .filter((b) => b.receiver.id === userId)
+  // ===== Incoming
+  const incomingBills = (bills ?? [])
+    .filter((b) => b.receiver?._id === myId)
     .flatMap((b) =>
       b.shares
-        .filter((s) => s.user.id !== userId)
+        .filter((s) => s.user?._id !== myId)
         .map((s) => ({ ...s, bill: b }))
     );
-
-  const incomingExpenses = expenses
-    .filter((e) => e.addedBy.id === userId)
+  const incomingExpenses = (expenses ?? [])
+    .filter((e) => e.addedBy?._id === myId)
     .flatMap((e) =>
       e.shares
-        .filter((s) => s.user.id !== userId)
+        .filter((s) => s.user?._id !== myId)
         .map((s) => ({ ...s, expense: e }))
     );
 
+  // ===== Money summary stats
+  const sent = [...outgoingBills, ...outgoingExpenses]
+    .filter((s) => s.isPaid)
+    .reduce((sum, s) => sum + s.amount, 0);
+  const received = [...incomingBills, ...incomingExpenses]
+    .filter((s) => s.isPaid)
+    .reduce((sum, s) => sum + s.amount, 0);
+  const unpaidOutgoing = [...outgoingBills, ...outgoingExpenses].filter(
+    (s) => !s.isPaid
+  ).length;
   const pendingIncoming = [...incomingBills, ...incomingExpenses].filter(
     (s) => s.proofUrl && !s.isPaid
   ).length;
 
-  const unpaidOutgoing = [...outgoingBills, ...outgoingExpenses].filter(
-    (s) => !s.isPaid
-  ).length;
-
-  const renderStatus = (s: { isPaid: boolean; proofUrl: string | null }) => {
-    if (s.isPaid)
-      return (
-        <span className="flex items-center gap-1 text-green-600 text-xs font-medium">
-          <CheckCircle size={14} /> Paid
-        </span>
-      );
-    if (s.proofUrl)
-      return (
-        <span className="flex items-center gap-1 text-amber-500 text-xs font-medium">
-          <Clock size={14} /> Awaiting confirmation
-        </span>
-      );
-    return (
-      <span className="flex items-center gap-1 text-red-500 text-xs font-medium">
-        <AlertCircle size={14} /> Unpaid
-      </span>
+  // ===== Multi-select
+  const keyOf = (kind: "bill" | "expense", id: string) => `${kind}:${id}`;
+  const selectableBills = outgoingBills.filter(
+    (i) => !i.isPaid && !i.proofUrl && i.bill.receiver
+  );
+  const selectableExpenses = outgoingExpenses.filter(
+    (i) => !i.isPaid && !i.proofUrl && i.expense.addedBy
+  );
+  const selectedBills = selectableBills.filter((i) =>
+    selectedKeys.has(keyOf("bill", i._id))
+  );
+  const selectedExpenses = selectableExpenses.filter((i) =>
+    selectedKeys.has(keyOf("expense", i._id))
+  );
+  const selectedItems: SelectedShare[] = [
+    ...selectedBills.map((i) => ({
+      kind: "bill" as const,
+      shareId: i._id,
+      label: BILL_TYPE_LABELS[i.bill.type] ?? i.bill.type,
+      amount: i.amount,
+    })),
+    ...selectedExpenses.map((i) => ({
+      kind: "expense" as const,
+      shareId: i._id,
+      label: i.expense.title,
+      amount: i.amount,
+    })),
+  ];
+  const selectedTotal = selectedItems.reduce((s, i) => s + i.amount, 0);
+  const receiverMap = new Map<
+    string,
+    { id: Id<"users">; name: string; paymentMethods: PaymentMethod[] }
+  >();
+  for (const i of selectedBills) {
+    if (!i.bill.receiver) continue;
+    const r = i.bill.receiver;
+    receiverMap.set(r._id, {
+      id: r._id,
+      name: displayName(r),
+      paymentMethods: r.paymentMethods,
+    });
+  }
+  for (const i of selectedExpenses) {
+    if (!i.expense.addedBy) continue;
+    const r = i.expense.addedBy;
+    receiverMap.set(r._id, {
+      id: r._id,
+      name: displayName(r),
+      paymentMethods: r.paymentMethods,
+    });
+  }
+  const uniqueReceivers = Array.from(receiverMap.values());
+  const singleReceiver = uniqueReceivers.length === 1 ? uniqueReceivers[0] : null;
+  const toggleKey = (k: string) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
+  const selectAll = () =>
+    setSelectedKeys(
+      new Set([
+        ...selectableBills.map((i) => keyOf("bill", i._id)),
+        ...selectableExpenses.map((i) => keyOf("expense", i._id)),
+      ])
     );
-  };
+  const clearSelection = () => setSelectedKeys(new Set());
+  const totalSelectable = selectableBills.length + selectableExpenses.length;
+  const allSelected =
+    totalSelectable > 0 && selectedKeys.size === totalSelectable;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-brown-600">Payments</h1>
-          <p className="text-charcoal-300 text-sm mt-0.5">{formatMonth(month)}</p>
-        </div>
-        <MonthSelector value={month} onChange={setMonth} />
+    <div>
+      <PageHead
+        eyebrow="Money movements"
+        title={`<em>Payments</em> ledger`}
+        sub="Every peso in and out — recorded."
+        action={<MonthPicker value={month} onChange={setMonth} />}
+      />
+
+      {/* Stats */}
+      <div className="cols-3">
+        <StatCard
+          label="Received"
+          amount={received}
+          meta={`${pendingIncoming} awaiting confirmation`}
+          icon="arrow-down"
+          tint="success"
+        />
+        <StatCard
+          label="Sent"
+          amount={sent}
+          meta={`${unpaidOutgoing} unpaid share${unpaidOutgoing === 1 ? "" : "s"}`}
+          icon="arrow-up"
+          tint="accent"
+        />
+        <StatCard
+          label="Net"
+          amount={received - sent}
+          meta={`for ${formatMonth(month)}`}
+          icon="wallet"
+          tint="ink"
+        />
       </div>
 
       {/* Tabs */}
-      <div className="flex bg-cream-200 rounded-2xl p-1 gap-1">
-        <button
-          onClick={() => setTab("outgoing")}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all relative ${
-            tab === "outgoing"
-              ? "bg-white text-brown-600 shadow-sm"
-              : "text-charcoal-300 hover:text-charcoal-400"
-          }`}
-        >
-          I Need to Pay
-          {unpaidOutgoing > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
-              {unpaidOutgoing}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setTab("incoming")}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all relative ${
-            tab === "incoming"
-              ? "bg-white text-brown-600 shadow-sm"
-              : "text-charcoal-300 hover:text-charcoal-400"
-          }`}
-        >
-          Owed to Me
-          {pendingIncoming > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
-              {pendingIncoming}
-            </span>
-          )}
-        </button>
+      <div className="tabs" style={{ marginTop: 24 }}>
+        {(
+          [
+            { id: "outgoing" as Tab, label: "I owe" },
+            { id: "incoming" as Tab, label: "Owed to me" },
+          ]
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={tab === t.id ? "active" : ""}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="bg-white rounded-2xl p-5 animate-pulse h-20 border border-cream-300" />
-          ))}
-        </div>
-      ) : tab === "outgoing" ? (
-        <div className="space-y-3">
-          {outgoingBills.length === 0 && outgoingExpenses.length === 0 ? (
-            <div className="bg-white rounded-2xl p-10 text-center border border-cream-300">
-              <CheckCircle size={40} className="mx-auto text-green-400 mb-3" />
-              <p className="text-charcoal-400 font-medium">All caught up!</p>
-              <p className="text-charcoal-200 text-sm mt-1">No payments needed for {formatMonth(month)}</p>
+      {tab === "outgoing" ? (
+        <div className="card card-lg">
+          {totalSelectable > 0 && (
+            <div
+              className="flex center between"
+              style={{ marginBottom: 12, flexWrap: "wrap", gap: 12 }}
+            >
+              <div className="muted" style={{ fontSize: 13 }}>
+                {totalSelectable} item{totalSelectable === 1 ? "" : "s"} you can pay
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={allSelected ? clearSelection : selectAll}
+              >
+                {allSelected ? "Clear selection" : "Select all"}
+              </button>
             </div>
+          )}
+
+          {loading ? (
+            <div className="muted" style={{ padding: 24 }}>
+              Loading…
+            </div>
+          ) : outgoingBills.length === 0 && outgoingExpenses.length === 0 ? (
+            <EmptyState
+              title="All caught up."
+              sub={`Nothing to pay for ${formatMonth(month)}.`}
+            />
           ) : (
             <>
-              {outgoingBills.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm flex items-center gap-4"
-                >
-                  <div className="text-2xl flex-shrink-0">{BILL_TYPE_ICONS[item.bill.type] ?? "📋"}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-charcoal-500">
-                      {BILL_TYPE_LABELS[item.bill.type] ?? item.bill.type}
-                    </div>
-                    <div className="text-xs text-charcoal-300">
-                      Pay to: {displayName(item.bill.receiver)}
-                    </div>
-                    <div className="mt-1">{renderStatus(item)}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    <div className="font-bold text-brown-600">{formatCurrency(item.amount)}</div>
-                    {!item.isPaid && !item.proofUrl && (
-                      <button
-                        onClick={() =>
-                          setPayModal({
-                            shareId: item.id,
-                            parentId: item.bill.id,
-                            type: "bill",
-                            amount: item.amount,
-                            receiverName: displayName(item.bill.receiver),
-                            receiverQrUrl: item.bill.receiver.qrCodeUrl,
-                          })
-                        }
-                        className="flex items-center gap-1 text-xs bg-brown-600 text-white px-3 py-1.5 rounded-lg hover:bg-brown-500 transition-colors"
-                      >
-                        <QrCode size={12} />
-                        Pay Now
-                      </button>
-                    )}
-                    {item.proofUrl && !item.isPaid && (
-                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
-                        Proof submitted
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {outgoingExpenses.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm flex items-center gap-4"
-                >
-                  <div className="text-2xl flex-shrink-0">🛍️</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-charcoal-500">{item.expense.title}</div>
-                    <div className="text-xs text-charcoal-300">Pay to: {displayName(item.expense.addedBy)}</div>
-                    <div className="mt-1">{renderStatus(item)}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    <div className="font-bold text-brown-600">{formatCurrency(item.amount)}</div>
-                    {!item.isPaid && !item.proofUrl && (
-                      <button
-                        onClick={() =>
-                          setPayModal({
-                            shareId: item.id,
-                            parentId: item.expense.id,
-                            type: "expense",
-                            amount: item.amount,
-                            receiverName: displayName(item.expense.addedBy),
-                            receiverQrUrl: item.expense.addedBy.qrCodeUrl,
-                          })
-                        }
-                        className="flex items-center gap-1 text-xs bg-brown-600 text-white px-3 py-1.5 rounded-lg hover:bg-brown-500 transition-colors"
-                      >
-                        <QrCode size={12} />
-                        Pay Now
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+              {outgoingBills.map((item) => {
+                const selectable =
+                  !item.isPaid && !item.proofUrl && !!item.bill.receiver;
+                const k = keyOf("bill", item._id);
+                const iconName = (BILL_TYPE_ICON[item.bill.type] ?? "receipt") as IconName;
+                return (
+                  <PayRow
+                    key={item._id}
+                    selectable={selectable}
+                    selected={selectedKeys.has(k)}
+                    onToggle={() => toggleKey(k)}
+                    icon={iconName}
+                    title={BILL_TYPE_LABELS[item.bill.type] ?? item.bill.type}
+                    sub={`Pay to ${
+                      item.bill.receiver ? displayName(item.bill.receiver) : "—"
+                    }`}
+                    amount={item.amount}
+                    status={renderStatus(item)}
+                    action={
+                      !item.isPaid && !item.proofUrl && item.bill.receiver ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() =>
+                            setPayModal({
+                              shareId: item._id,
+                              type: "bill",
+                              amount: item.amount,
+                              receiverName: displayName(item.bill.receiver!),
+                              paymentMethods: item.bill.receiver!.paymentMethods,
+                            })
+                          }
+                        >
+                          Pay
+                        </button>
+                      ) : null
+                    }
+                  />
+                );
+              })}
+              {outgoingExpenses.map((item) => {
+                const selectable =
+                  !item.isPaid && !item.proofUrl && !!item.expense.addedBy;
+                const k = keyOf("expense", item._id);
+                return (
+                  <PayRow
+                    key={item._id}
+                    selectable={selectable}
+                    selected={selectedKeys.has(k)}
+                    onToggle={() => toggleKey(k)}
+                    icon="tag"
+                    title={item.expense.title}
+                    sub={`Pay to ${
+                      item.expense.addedBy
+                        ? displayName(item.expense.addedBy)
+                        : "—"
+                    }`}
+                    amount={item.amount}
+                    status={renderStatus(item)}
+                    action={
+                      !item.isPaid && !item.proofUrl && item.expense.addedBy ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() =>
+                            setPayModal({
+                              shareId: item._id,
+                              type: "expense",
+                              amount: item.amount,
+                              receiverName: displayName(item.expense.addedBy!),
+                              paymentMethods: item.expense.addedBy!.paymentMethods,
+                            })
+                          }
+                        >
+                          Pay
+                        </button>
+                      ) : null
+                    }
+                  />
+                );
+              })}
             </>
           )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {incomingBills.length === 0 && incomingExpenses.length === 0 ? (
-            <div className="bg-white rounded-2xl p-10 text-center border border-cream-300">
-              <div className="text-4xl mb-3">💸</div>
-              <p className="text-charcoal-400 font-medium">Nothing owed to you</p>
-              <p className="text-charcoal-200 text-sm mt-1">For {formatMonth(month)}</p>
+        <div className="card card-lg">
+          {loading ? (
+            <div className="muted" style={{ padding: 24 }}>
+              Loading…
             </div>
+          ) : incomingBills.length === 0 && incomingExpenses.length === 0 ? (
+            <EmptyState
+              title="Nothing owed to you."
+              sub={`For ${formatMonth(month)}.`}
+            />
           ) : (
             <>
-              {incomingBills.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm flex items-center gap-4"
-                >
-                  <div className="text-2xl flex-shrink-0">{BILL_TYPE_ICONS[item.bill.type] ?? "📋"}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-charcoal-500">
-                      {BILL_TYPE_LABELS[item.bill.type] ?? item.bill.type}
-                    </div>
-                    <div className="text-xs text-charcoal-300">From: {displayName(item.user)}</div>
-                    <div className="mt-1">{renderStatus(item)}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    <div className="font-bold text-brown-600">{formatCurrency(item.amount)}</div>
-                    {item.proofUrl && !item.isPaid && (
-                      <button
-                        onClick={() =>
-                          setConfirmModal({
-                            shareId: item.id,
-                            parentId: item.bill.id,
-                            type: "bill",
-                            amount: item.amount,
-                            payerName: displayName(item.user),
-                            proofUrl: item.proofUrl!,
-                          })
-                        }
-                        className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors"
-                      >
-                        Confirm Payment
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-
+              {incomingBills.map((item) => {
+                const iconName = (BILL_TYPE_ICON[item.bill.type] ?? "receipt") as IconName;
+                return (
+                  <PayRow
+                    key={item._id}
+                    icon={iconName}
+                    title={BILL_TYPE_LABELS[item.bill.type] ?? item.bill.type}
+                    sub={`From ${item.user ? displayName(item.user) : "—"}`}
+                    amount={item.amount}
+                    status={renderStatus(item)}
+                    leadingAvatar={item.user ?? undefined}
+                    action={
+                      item.proofUrl && !item.isPaid && item.user ? (
+                        <button
+                          type="button"
+                          className="btn btn-accent btn-sm"
+                          onClick={() =>
+                            setConfirmModal({
+                              shareId: item._id,
+                              type: "bill",
+                              amount: item.amount,
+                              payerName: displayName(item.user!),
+                              proofUrl: item.proofUrl!,
+                            })
+                          }
+                        >
+                          Review
+                        </button>
+                      ) : null
+                    }
+                  />
+                );
+              })}
               {incomingExpenses.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-2xl p-4 border border-cream-300 shadow-sm flex items-center gap-4"
-                >
-                  <div className="text-2xl flex-shrink-0">🛍️</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-charcoal-500">{item.expense.title}</div>
-                    <div className="text-xs text-charcoal-300">From: {displayName(item.user)}</div>
-                    <div className="mt-1">{renderStatus(item)}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    <div className="font-bold text-brown-600">{formatCurrency(item.amount)}</div>
-                    {item.proofUrl && !item.isPaid && (
+                <PayRow
+                  key={item._id}
+                  icon="tag"
+                  title={item.expense.title}
+                  sub={`From ${item.user ? displayName(item.user) : "—"}`}
+                  amount={item.amount}
+                  status={renderStatus(item)}
+                  leadingAvatar={item.user ?? undefined}
+                  action={
+                    item.proofUrl && !item.isPaid && item.user ? (
                       <button
+                        type="button"
+                        className="btn btn-accent btn-sm"
                         onClick={() =>
                           setConfirmModal({
-                            shareId: item.id,
-                            parentId: item.expense.id,
+                            shareId: item._id,
                             type: "expense",
                             amount: item.amount,
-                            payerName: displayName(item.user),
+                            payerName: displayName(item.user!),
                             proofUrl: item.proofUrl!,
                           })
                         }
-                        className="text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors"
                       >
-                        Confirm Payment
+                        Review
                       </button>
-                    )}
-                  </div>
-                </div>
+                    ) : null
+                  }
+                />
               ))}
             </>
           )}
         </div>
       )}
 
-      {payModal && (
+      {/* Sticky multi-select bar */}
+      {tab === "outgoing" && selectedItems.length > 0 && (
+        <div className="action-bar">
+          <div className="action-bar-inner">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                {selectedItems.length} selected · {formatCurrency(selectedTotal)}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  opacity: 0.85,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {singleReceiver
+                  ? `to ${singleReceiver.name}`
+                  : `${uniqueReceivers.length} different recipients — pick one at a time`}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="btn btn-sm"
+              style={{
+                background: "oklch(1 0 0 / 0.12)",
+                color: "var(--bg)",
+                borderColor: "oklch(1 0 0 / 0.18)",
+              }}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => setMultiPayOpen(true)}
+              disabled={!singleReceiver}
+              title={
+                !singleReceiver
+                  ? "Selected items must have the same recipient"
+                  : undefined
+              }
+              className="btn btn-sm"
+              style={{ background: "var(--bg)", color: "var(--ink)" }}
+            >
+              Pay now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pay one-share modal — branch by type for TS narrowing */}
+      {payModal?.type === "bill" && (
         <PaymentModal
-          open={!!payModal}
+          open={true}
           onClose={() => setPayModal(null)}
-          onSuccess={fetchData}
           shareId={payModal.shareId}
-          shareType={payModal.type}
-          parentId={payModal.parentId}
+          shareType="bill"
           amount={payModal.amount}
           receiverName={payModal.receiverName}
-          receiverQrUrl={payModal.receiverQrUrl}
+          paymentMethods={payModal.paymentMethods}
+        />
+      )}
+      {payModal?.type === "expense" && (
+        <PaymentModal
+          open={true}
+          onClose={() => setPayModal(null)}
+          shareId={payModal.shareId}
+          shareType="expense"
+          amount={payModal.amount}
+          receiverName={payModal.receiverName}
+          paymentMethods={payModal.paymentMethods}
         />
       )}
 
-      {confirmModal && (
+      {confirmModal?.type === "bill" && (
         <ConfirmPaymentModal
-          open={!!confirmModal}
+          open={true}
           onClose={() => setConfirmModal(null)}
-          onSuccess={fetchData}
           shareId={confirmModal.shareId}
-          shareType={confirmModal.type}
-          parentId={confirmModal.parentId}
+          shareType="bill"
           amount={confirmModal.amount}
           payerName={confirmModal.payerName}
           proofUrl={confirmModal.proofUrl}
         />
       )}
+      {confirmModal?.type === "expense" && (
+        <ConfirmPaymentModal
+          open={true}
+          onClose={() => setConfirmModal(null)}
+          shareId={confirmModal.shareId}
+          shareType="expense"
+          amount={confirmModal.amount}
+          payerName={confirmModal.payerName}
+          proofUrl={confirmModal.proofUrl}
+        />
+      )}
+
+      {singleReceiver && (
+        <MultiPaymentModal
+          open={multiPayOpen}
+          onClose={() => {
+            setMultiPayOpen(false);
+            clearSelection();
+          }}
+          receiverName={singleReceiver.name}
+          paymentMethods={singleReceiver.paymentMethods}
+          items={selectedItems}
+        />
+      )}
+    </div>
+  );
+}
+
+function renderStatus(s: { isPaid: boolean; proofUrl?: string | null }) {
+  if (s.isPaid)
+    return (
+      <Badge kind="success" dot>
+        Paid
+      </Badge>
+    );
+  if (s.proofUrl)
+    return (
+      <Badge kind="warning" dot>
+        Awaiting confirmation
+      </Badge>
+    );
+  return (
+    <Badge kind="danger" dot>
+      Unpaid
+    </Badge>
+  );
+}
+
+function StatCard({
+  label,
+  amount,
+  meta,
+  icon,
+  tint,
+}: {
+  label: string;
+  amount: number;
+  meta: string;
+  icon: IconName;
+  tint: "success" | "accent" | "ink";
+}) {
+  const tintBg =
+    tint === "success"
+      ? "var(--success-soft)"
+      : tint === "accent"
+        ? "var(--accent-soft)"
+        : "var(--ink)";
+  const tintFg =
+    tint === "success"
+      ? "var(--success)"
+      : tint === "accent"
+        ? "var(--accent)"
+        : "var(--bg)";
+  return (
+    <div className="stat" style={{ padding: 20 }}>
+      <div className="flex center between">
+        <div className="stat-label">{label}</div>
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            background: tintBg,
+            color: tintFg,
+            display: "grid",
+            placeItems: "center",
+          }}
+        >
+          <Icon name={icon} size={14} />
+        </div>
+      </div>
+      <div className="stat-val tnum">{formatCurrency(amount)}</div>
+      <div className="stat-meta">{meta}</div>
+    </div>
+  );
+}
+
+function EmptyState({ title, sub }: { title: string; sub: string }) {
+  return (
+    <div style={{ padding: "60px 20px", textAlign: "center" }}>
+      <div className="serif" style={{ fontSize: 24, marginBottom: 6 }}>
+        {title}
+      </div>
+      <div className="muted">{sub}</div>
+    </div>
+  );
+}
+
+function PayRow(props: {
+  selectable?: boolean;
+  selected?: boolean;
+  onToggle?: () => void;
+  icon: IconName;
+  title: string;
+  sub: string;
+  amount: number;
+  status: React.ReactNode;
+  leadingAvatar?: {
+    _id: string;
+    name: string;
+    nickname?: string | null;
+  };
+  action?: React.ReactNode;
+}) {
+  const {
+    selectable,
+    selected,
+    onToggle,
+    icon,
+    title,
+    sub,
+    amount,
+    status,
+    leadingAvatar,
+    action,
+  } = props;
+  return (
+    <div className="row">
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={!!selected}
+          onChange={onToggle}
+          style={{ width: 16, height: 16, accentColor: "var(--ink)" }}
+          aria-label="Select for batch payment"
+        />
+      )}
+      {leadingAvatar ? (
+        <Avatar user={leadingAvatar} size="sm" />
+      ) : (
+        <div className="row-icon">
+          <Icon name={icon} size={18} />
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="row-title">{title}</div>
+        <div className="row-meta">{sub}</div>
+        <div style={{ marginTop: 6 }}>{status}</div>
+      </div>
+      <div className="flex center gap-3">
+        <div className="serif tnum" style={{ fontSize: 18 }}>
+          {formatCurrency(amount)}
+        </div>
+        {action}
+      </div>
     </div>
   );
 }
