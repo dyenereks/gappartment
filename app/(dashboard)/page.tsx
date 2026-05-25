@@ -6,7 +6,6 @@ import { useUser } from "@clerk/nextjs";
 import PageHead from "@/components/PageHead";
 import MonthPicker from "@/components/MonthPicker";
 import Badge from "@/components/Badge";
-import Avatar from "@/components/Avatar";
 import Ring from "@/components/Ring";
 import BillRow from "@/components/BillRow";
 import Icon from "@/components/Icon";
@@ -26,35 +25,12 @@ export default function DashboardPage() {
   const [month, setMonth] = useState(getCurrentMonth());
 
   const me = useQuery(api.users.current);
-  const users = useQuery(api.users.list);
   const bills = useQuery(api.bills.listByMonth, { month });
   const expenses = useQuery(api.expenses.listByMonth, { month });
 
   const loading =
-    me === undefined ||
-    users === undefined ||
-    bills === undefined ||
-    expenses === undefined;
+    me === undefined || bills === undefined || expenses === undefined;
   const myId = me?._id;
-
-  // Per-peer balances (admin-side: they owe me)
-  const peersOweMe = (users ?? [])
-    .filter((u) => u._id !== myId)
-    .map((u) => {
-      const fromBills = (bills ?? [])
-        .filter((b) => b.receiver?._id === myId)
-        .flatMap((b) =>
-          b.shares.filter((s) => s.user?._id === u._id && !s.isPaid)
-        )
-        .reduce((sum, s) => sum + s.amount, 0);
-      const fromExpenses = (expenses ?? [])
-        .filter((e) => e.addedBy?._id === myId)
-        .flatMap((e) =>
-          e.shares.filter((s) => s.user?._id === u._id && !s.isPaid)
-        )
-        .reduce((sum, s) => sum + s.amount, 0);
-      return { user: u, owesYou: fromBills + fromExpenses };
-    });
 
   // Hero card — the current user's own outstanding total this month
   // (sum of their unpaid shares across every bill).
@@ -298,97 +274,26 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Roommates + quick actions */}
-          <div className="cols-2-1" style={{ marginTop: 24 }}>
-            <div className="card card-lg">
-              <div className="card-head">
-                <h2 className="card-title">Roommates</h2>
-              </div>
-              <div
-                className="grid gap-3"
-                style={{
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                }}
-              >
-                {(users ?? []).map((u) => {
-                  const isMine = u._id === myId;
-                  const balance = peersOweMe.find(
-                    (p) => p.user._id === u._id
-                  );
-                  return (
-                    <div
-                      key={u._id}
-                      style={{
-                        padding: 16,
-                        border: "1px solid var(--line)",
-                        borderRadius: 12,
-                        background: "var(--paper-2)",
-                      }}
-                    >
-                      <div className="flex center between">
-                        <Avatar user={u} />
-                        {u.isAdmin && <Badge kind="ink">Admin</Badge>}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 12,
-                          fontWeight: 500,
-                          fontSize: 14,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {displayName(u)}
-                      </div>
-                      {isMine ? (
-                        <div className="muted" style={{ fontSize: 13 }}>
-                          That&apos;s you
-                        </div>
-                      ) : balance && balance.owesYou > 0 ? (
-                        <div
-                          style={{
-                            fontSize: 13,
-                            color: "var(--success)",
-                            marginTop: 2,
-                          }}
-                        >
-                          Owes you {formatCurrency(balance.owesYou)}
-                        </div>
-                      ) : (
-                        <div
-                          className="muted"
-                          style={{ fontSize: 13, marginTop: 2 }}
-                        >
-                          All settled
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+          {/* Quick actions */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <h2 className="card-title">Quick actions</h2>
             </div>
-
-            <div className="card card-lg">
-              <div className="card-head">
-                <h2 className="card-title">Quick actions</h2>
-              </div>
-              <div style={{ display: "grid", gap: 10 }}>
-                <Link href="/payments" className="btn btn-outline btn-block">
-                  <Icon name="wallet" size={14} /> Pay outstanding shares
+            <div style={{ display: "grid", gap: 10 }}>
+              <Link href="/payments" className="btn btn-outline btn-block">
+                <Icon name="wallet" size={14} /> Pay outstanding shares
+              </Link>
+              <Link href="/profile" className="btn btn-outline btn-block">
+                <Icon name="wallet" size={14} /> Update payment methods
+              </Link>
+              {me?.isAdmin && (
+                <Link href="/bills" className="btn btn-primary btn-block">
+                  <Icon name="plus" size={14} /> Add a bill
                 </Link>
-                <Link href="/profile" className="btn btn-outline btn-block">
-                  <Icon name="wallet" size={14} /> Update payment methods
-                </Link>
-                {me?.isAdmin && (
-                  <Link href="/bills" className="btn btn-primary btn-block">
-                    <Icon name="plus" size={14} /> Add a bill
-                  </Link>
-                )}
-                <Link href="/expenses" className="btn btn-primary btn-block">
-                  <Icon name="plus" size={14} /> Add a shared expense
-                </Link>
-              </div>
+              )}
+              <Link href="/expenses" className="btn btn-primary btn-block">
+                <Icon name="plus" size={14} /> Add a shared expense
+              </Link>
             </div>
           </div>
         </>
