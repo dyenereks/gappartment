@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import Icon from "./Icon";
 import { downloadImage } from "@/lib/utils";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -24,6 +25,7 @@ interface Props {
 export default function PaymentMethodCard({ method, receiverName }: Props) {
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [viewingQr, setViewingQr] = useState(false);
 
   const handleCopy = async () => {
     if (!method.accountNumber) return;
@@ -139,15 +141,101 @@ export default function PaymentMethodCard({ method, receiverName }: Props) {
       )}
 
       {method.qrCodeUrl && (
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={downloading}
-          className="btn btn-outline btn-block"
+        <>
+          <button
+            type="button"
+            onClick={() => setViewingQr(true)}
+            className="btn btn-outline btn-block"
+          >
+            <Icon name="search" size={14} /> View QR
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="btn btn-outline btn-block"
+          >
+            <Icon name="download" size={14} />{" "}
+            {downloading ? "Saving…" : "Download QR"}
+          </button>
+        </>
+      )}
+
+      {viewingQr && method.qrCodeUrl && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 200,
+            background: "oklch(0.1 0.01 60 / 0.92)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+          onClick={() => setViewingQr(false)}
         >
-          <Icon name="download" size={14} />{" "}
-          {downloading ? "Saving…" : "Download QR"}
-        </button>
+          <div
+            style={{ width: "100%", maxWidth: 360 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                background: "var(--paper)",
+                borderRadius: 20,
+                padding: 20,
+                display: "flex",
+                flexDirection: "column",
+                gap: 16,
+              }}
+            >
+              <div className="flex center between">
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>
+                    {method.provider} QR code
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    {receiverName}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingQr(false)}
+                  className="btn btn-ghost btn-sm"
+                  aria-label="Close"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+
+              <Image
+                src={method.qrCodeUrl}
+                alt={`${method.provider} QR code`}
+                width={320}
+                height={320}
+                style={{
+                  width: "100%",
+                  height: "auto",
+                  borderRadius: 12,
+                  display: "block",
+                  border: "1px solid var(--line)",
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={downloading}
+                className="btn btn-primary btn-block"
+              >
+                <Icon name="download" size={14} />{" "}
+                {downloading ? "Saving…" : "Download QR"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
