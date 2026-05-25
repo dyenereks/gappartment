@@ -62,10 +62,14 @@ export default function MultiPaymentModal({
     setLoading(true);
     try {
       const uploaded = await startUpload([proofFile]);
-      if (!uploaded?.[0]?.url) {
+      // ufsUrl is the v7+ canonical field; fall back to serverData then deprecated url
+      const proofUrl =
+        uploaded?.[0]?.ufsUrl ??
+        (uploaded?.[0]?.serverData as { url?: string } | null)?.url ??
+        uploaded?.[0]?.url;
+      if (!proofUrl) {
         throw new Error("Upload returned no URL (UploadThing may be misconfigured)");
       }
-      const proofUrl = uploaded[0].url;
       const billIds = items
         .filter((i) => i.kind === "bill")
         .map((i) => i.shareId as Id<"billShares">);

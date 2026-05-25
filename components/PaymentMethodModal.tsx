@@ -108,12 +108,17 @@ export default function PaymentMethodModal({
         setLoading(false);
         return;
       }
-      if (!uploaded?.[0]?.url) {
+      // ufsUrl is the v7+ canonical field; fall back to serverData then deprecated url
+      qrUrl =
+        uploaded?.[0]?.ufsUrl ??
+        (uploaded?.[0]?.serverData as { url?: string } | null)?.url ??
+        uploaded?.[0]?.url ??
+        null;
+      if (!qrUrl) {
         setError("QR upload returned no URL");
         setLoading(false);
         return;
       }
-      qrUrl = uploaded[0].url;
     }
     if (!acct && !qrUrl) {
       setError("Provide an account number, a QR code, or both");

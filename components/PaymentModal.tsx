@@ -69,10 +69,14 @@ export default function PaymentModal(props: Props) {
     setLoading(true);
     try {
       const uploaded = await startUpload([proofFile]);
-      if (!uploaded?.[0]?.url) {
+      // ufsUrl is the v7+ canonical field; fall back to serverData then deprecated url
+      const proofUrl =
+        uploaded?.[0]?.ufsUrl ??
+        (uploaded?.[0]?.serverData as { url?: string } | null)?.url ??
+        uploaded?.[0]?.url;
+      if (!proofUrl) {
         throw new Error("Upload returned no URL (UploadThing may be misconfigured)");
       }
-      const proofUrl = uploaded[0].url;
       if (shareType === "bill") {
         await submitBillProof({ shareId, proofUrl });
       } else {

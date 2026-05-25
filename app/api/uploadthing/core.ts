@@ -11,7 +11,8 @@ export const ourFileRouter = {
       return { userId };
     })
     .onUploadComplete(async ({ file }) => {
-      return { url: file.url };
+      // ufsUrl is the v7+ canonical URL; url is deprecated but kept as fallback
+      return { url: file.ufsUrl ?? file.url };
     }),
 
   paymentProof: f({ image: { maxFileSize: "8MB", maxFileCount: 1 } })
@@ -21,7 +22,7 @@ export const ourFileRouter = {
       return { userId };
     })
     .onUploadComplete(async ({ file }) => {
-      return { url: file.url };
+      return { url: file.ufsUrl ?? file.url };
     }),
 } satisfies FileRouter;
 
