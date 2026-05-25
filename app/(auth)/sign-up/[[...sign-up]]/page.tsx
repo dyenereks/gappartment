@@ -17,9 +17,9 @@ export default function SignUpPage() {
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div
             className="brand-mark"
-            style={{ margin: "0 auto 12px", width: 44, height: 44, fontSize: 20 }}
+            style={{ margin: "0 auto 12px", width: 44, height: 44, fontSize: 24 }}
           >
-            G
+            🏠
           </div>
           <h1
             className="serif"

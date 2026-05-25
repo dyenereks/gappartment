@@ -61,7 +61,7 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <Link href="/" className="brand">
-        <div className="brand-mark">G</div>
+        <div className="brand-mark" style={{ fontSize: 20 }}>🏠</div>
         <div style={{ minWidth: 0 }}>
           <div className="brand-name">GAppartment</div>
           <div className="brand-sub">Bill Sharing</div>

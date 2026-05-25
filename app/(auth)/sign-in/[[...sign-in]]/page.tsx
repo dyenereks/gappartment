@@ -17,9 +17,9 @@ export default function SignInPage() {
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div
             className="brand-mark"
-            style={{ margin: "0 auto 12px", width: 44, height: 44, fontSize: 20 }}
+            style={{ margin: "0 auto 12px", width: 44, height: 44, fontSize: 24 }}
           >
-            G
+            🏠
           </div>
           <h1
             className="serif"
@@ -45,8 +45,9 @@ export default function SignInPage() {
               borderRadius: "12px",
             },
             elements: {
-              rootBox: { width: "100%" },
+              rootBox: { width: "100%", display: "flex", justifyContent: "center" },
               card: {
+                margin: "0 auto",
                 background: "var(--paper)",
                 border: "1px solid var(--line)",
                 boxShadow: "var(--shadow-card)",

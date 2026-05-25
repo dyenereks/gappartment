@@ -34,8 +34,8 @@ export function MobileTopbar() {
   return (
     <div className="mobile-topbar">
       <div className="flex center gap-3" style={{ minWidth: 0 }}>
-        <div className="brand-mark" style={{ width: 32, height: 32, fontSize: 16 }}>
-          G
+        <div className="brand-mark" style={{ width: 32, height: 32, fontSize: 18 }}>
+          🏠
         </div>
         <div
           className="serif"
