@@ -21,7 +21,9 @@ export default function RootLayout({
       var stored = localStorage.getItem('theme');
       var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       var isDark = stored === 'dark' || (!stored && prefersDark);
-      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      // Dark theme only on logged-in pages; auth / pre-auth pages are always light
+      var isAuthPage = /^\/(sign-in|sign-up|setup-profile)/.test(window.location.pathname);
+      document.documentElement.setAttribute('data-theme', (isDark && !isAuthPage) ? 'dark' : 'light');
     } catch (_) {
       document.documentElement.setAttribute('data-theme', 'light');
     }
