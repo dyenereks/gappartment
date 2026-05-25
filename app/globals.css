@@ -466,6 +466,29 @@ a { color: inherit; text-decoration: none; }
 }
 .tabs button.active { color: var(--ink); border-color: var(--ink); }
 
+/* ===== navigation progress bar ===== */
+.nav-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px; width: 0;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent), 0 0 4px var(--accent);
+  border-radius: 0 3px 3px 0;
+  opacity: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+.nav-progress[data-state="loading"] {
+  width: 85%;
+  opacity: 1;
+  transition: width 10s cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+.nav-progress[data-state="done"] {
+  width: 100%;
+  opacity: 0;
+  transition: width 0.2s ease, opacity 0.4s ease 0.2s;
+}
+
 /* ===== mobile shell ===== */
 .mobile-topbar { display: none; }
 .mobile-tab-bar { display: none; }

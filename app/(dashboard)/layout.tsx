@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import { MobileTopbar, MobileTabBar } from "@/components/MobileShell";
 import UserSync from "@/components/UserSync";
+import NavigationProgress from "@/components/NavigationProgress";
 
 export default async function DashboardLayout({
   children,
@@ -14,6 +15,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="app">
+      <NavigationProgress />
       <UserSync />
       <Sidebar />
       <MobileTopbar />
