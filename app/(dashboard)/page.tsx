@@ -9,6 +9,7 @@ import Badge from "@/components/Badge";
 import Ring from "@/components/Ring";
 import BillRow from "@/components/BillRow";
 import Icon from "@/components/Icon";
+import PushToggle from "@/components/PushToggle";
 import {
   BILL_TYPE_ICON,
   BILL_TYPE_LABELS,
@@ -249,6 +250,30 @@ export default function DashboardPage() {
             })()}
           </div>
 
+          {/* Quick actions */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <h2 className="card-title">Quick actions</h2>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <Link href="/payments" className="btn btn-outline btn-block">
+                <Icon name="wallet" size={14} /> Pay outstanding shares
+              </Link>
+              <Link href="/profile" className="btn btn-outline btn-block">
+                <Icon name="wallet" size={14} /> Update payment methods
+              </Link>
+              <PushToggle compact />
+              {me?.isAdmin && (
+                <Link href="/bills" className="btn btn-primary btn-block">
+                  <Icon name="plus" size={14} /> Add a bill
+                </Link>
+              )}
+              <Link href="/expenses" className="btn btn-primary btn-block">
+                <Icon name="plus" size={14} /> Add a shared expense
+              </Link>
+            </div>
+          </div>
+
           {/* Upcoming bills */}
           <div className="card card-lg" style={{ marginTop: 24 }}>
             <div className="card-head">
@@ -272,29 +297,6 @@ export default function DashboardPage() {
             ) : (
               upcoming.slice(0, 4).map((b) => <BillRow key={b._id} bill={b} />)
             )}
-          </div>
-
-          {/* Quick actions */}
-          <div className="card card-lg" style={{ marginTop: 24 }}>
-            <div className="card-head">
-              <h2 className="card-title">Quick actions</h2>
-            </div>
-            <div style={{ display: "grid", gap: 10 }}>
-              <Link href="/payments" className="btn btn-outline btn-block">
-                <Icon name="wallet" size={14} /> Pay outstanding shares
-              </Link>
-              <Link href="/profile" className="btn btn-outline btn-block">
-                <Icon name="wallet" size={14} /> Update payment methods
-              </Link>
-              {me?.isAdmin && (
-                <Link href="/bills" className="btn btn-primary btn-block">
-                  <Icon name="plus" size={14} /> Add a bill
-                </Link>
-              )}
-              <Link href="/expenses" className="btn btn-primary btn-block">
-                <Icon name="plus" size={14} /> Add a shared expense
-              </Link>
-            </div>
           </div>
         </>
       )}

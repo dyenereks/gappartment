@@ -18,7 +18,17 @@ type Status =
   | { kind: "off" } // supported, not subscribed
   | { kind: "on"; endpoint: string };
 
-export default function PushToggle() {
+interface PushToggleProps {
+  /**
+   * Compact variant — renders only an "Enable notifications" button styled to
+   * match Quick action buttons. Hides itself in any state other than `off` so
+   * the dashboard isn't cluttered with status chips or error banners (users
+   * see those on the Profile page instead).
+   */
+  compact?: boolean;
+}
+
+export default function PushToggle({ compact = false }: PushToggleProps = {}) {
   const save = useMutation(api.pushSubscriptions.save);
   const remove = useMutation(api.pushSubscriptions.remove);
 
@@ -191,6 +201,23 @@ export default function PushToggle() {
         );
     }
   };
+
+  if (compact) {
+    // Quick-actions variant: only surface the enable button when there's
+    // genuinely something to do. Stay silent in every other state.
+    if (status.kind !== "off") return null;
+    return (
+      <button
+        type="button"
+        className="btn btn-outline btn-block"
+        onClick={enable}
+        disabled={busy}
+      >
+        <Icon name="bell" size={14} />
+        {busy ? "Enabling…" : "Enable notifications"}
+      </button>
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
