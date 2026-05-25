@@ -67,6 +67,18 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_bill_and_user", ["billId", "userId"]),
 
+  leyecoBills: defineTable({
+    billMonthCode: v.string(), // "202605" — dedup key
+    month: v.string(),         // "2026-05"
+    year: v.number(),
+    amount: v.number(),
+    billDate: v.number(),      // epoch ms
+    dueDate: v.number(),       // epoch ms
+    kwhUsed: v.number(),
+    status: v.string(),        // "PAID" | "UNPAID"
+    billNumber: v.string(),
+  }).index("by_billMonthCode", ["billMonthCode"]),
+
   expenses: defineTable({
     title: v.string(),
     description: v.optional(v.union(v.string(), v.null())),

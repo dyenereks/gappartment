@@ -10,11 +10,60 @@ import BillRow from "@/components/BillRow";
 import {
   displayName,
   formatCurrency,
+  formatDate,
   formatMonth,
   getCurrentMonth,
 } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+
+function LeyecoBillRow({ bill }: { bill: Doc<"leyecoBills"> }) {
+  const [copied, setCopied] = useState(false);
+
+  function copyAmount() {
+    navigator.clipboard.writeText(bill.amount.toFixed(2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <div className="row" style={{ padding: "12px 0", alignItems: "flex-start" }}>
+      <div
+        className="row-icon"
+        style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+      >
+        <Icon name="bolt" size={16} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="row-title">{formatMonth(bill.month)}</div>
+        <div className="row-meta">
+          Bill date {formatDate(bill.billDate)} · Due {formatDate(bill.dueDate)} · {bill.kwhUsed} kWh
+        </div>
+        <div className="row-meta" style={{ marginTop: 2 }}>
+          Bill #{bill.billNumber}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <Badge kind={bill.status === "PAID" ? "success" : "warning"}>
+          {bill.status}
+        </Badge>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span className="serif tnum" style={{ fontSize: 16, fontWeight: 600 }}>
+            {formatCurrency(bill.amount)}
+          </span>
+          <button
+            className="btn btn-ghost btn-icon btn-sm"
+            onClick={copyAmount}
+            title="Copy amount"
+            style={{ padding: 4 }}
+          >
+            <Icon name={copied ? "check" : "copy"} size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function AdminPage() {
   const [month, setMonth] = useState(getCurrentMonth());
@@ -23,12 +72,14 @@ export default function AdminPage() {
   const users = useQuery(api.users.list);
   const bills = useQuery(api.bills.listByMonth, { month });
   const expenses = useQuery(api.expenses.listByMonth, { month });
+  const leyecoBills = useQuery(api.leyecoBills.list);
 
   const loading =
     me === undefined ||
     users === undefined ||
     bills === undefined ||
-    expenses === undefined;
+    expenses === undefined ||
+    leyecoBills === undefined;
 
   if (me !== undefined && !me?.isAdmin) {
     return (
@@ -157,6 +208,21 @@ export default function AdminPage() {
               </div>
               <div className="stat-meta">{formatMonth(month)}</div>
             </div>
+          </div>
+
+          {/* Leyeco electric bills */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <h2 className="card-title">Leyeco Electric Bills</h2>
+              <div className="card-sub">Synced from Leyeco2 · hit /api/leyeco/sync to refresh</div>
+            </div>
+            {leyecoBills!.length === 0 ? (
+              <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
+                No Leyeco bills imported yet.
+              </div>
+            ) : (
+              leyecoBills!.map((b) => <LeyecoBillRow key={b._id} bill={b} />)
+            )}
           </div>
 
           {/* Tenant balances + bills overview */}

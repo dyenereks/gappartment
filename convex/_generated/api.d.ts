@@ -13,6 +13,7 @@ import type * as billShares from "../billShares.js";
 import type * as bills from "../bills.js";
 import type * as expenseShares from "../expenseShares.js";
 import type * as expenses from "../expenses.js";
+import type * as leyecoBills from "../leyecoBills.js";
 import type * as notifications from "../notifications.js";
 import type * as paymentMethods from "../paymentMethods.js";
 import type * as pushSubscriptions from "../pushSubscriptions.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   bills: typeof bills;
   expenseShares: typeof expenseShares;
   expenses: typeof expenses;
+  leyecoBills: typeof leyecoBills;
   notifications: typeof notifications;
   paymentMethods: typeof paymentMethods;
   pushSubscriptions: typeof pushSubscriptions;
