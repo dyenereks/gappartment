@@ -25,7 +25,7 @@ const TITLE_BY_PATH: Record<string, string> = {
 function titleFor(pathname: string) {
   if (pathname === "/") return TITLE_BY_PATH["/"];
   const top = "/" + pathname.split("/").filter(Boolean)[0];
-  return TITLE_BY_PATH[top] ?? "GAppartment";
+  return TITLE_BY_PATH[top] ?? "gAPPartment";
 }
 
 export function MobileTopbar() {

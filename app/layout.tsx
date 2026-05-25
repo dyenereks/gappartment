@@ -4,7 +4,7 @@ import ConvexClientProvider from "@/components/ConvexClientProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GAppartment — Bill Sharing",
+  title: "gAPPartment — Bill Sharing",
   description: "Apartment bill and expense sharing made easy",
 };
 

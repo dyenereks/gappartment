@@ -25,7 +25,7 @@ export default function SignInPage() {
             className="serif"
             style={{ fontSize: 28, letterSpacing: "-0.02em" }}
           >
-            GAppartment
+            gAPPartment
           </h1>
           <p className="muted" style={{ marginTop: 4 }}>
             Sign in to manage your bills
