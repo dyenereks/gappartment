@@ -87,6 +87,12 @@ export const confirmPayment = mutation({
       confirmedAt: Date.now(),
       confirmedById: me._id,
     });
+    await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      userIds: [share.userId],
+      title: "Payment confirmed",
+      body: `${me.nickname || me.name} confirmed your payment of ${fmtPeso(share.amount)} (${expense.title})`,
+      url: "/payments",
+    });
   },
 });
 
@@ -102,6 +108,12 @@ export const rejectPayment = mutation({
     await ctx.db.patch(args.shareId, {
       proofUrl: null,
       paidAt: null,
+    });
+    await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      userIds: [share.userId],
+      title: "Payment rejected",
+      body: `${me.nickname || me.name} rejected your proof for ${fmtPeso(share.amount)} (${expense.title}) — please re-upload`,
+      url: "/payments",
     });
   },
 });
