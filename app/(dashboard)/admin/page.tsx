@@ -172,29 +172,35 @@ export default function AdminPage() {
                   <div
                     key={u._id}
                     className="row"
-                    style={{ padding: "12px 0" }}
+                    style={{ padding: "12px 0", alignItems: "flex-start", gap: 10 }}
                   >
-                    <Avatar user={u} showName isAdmin={u.isAdmin} />
+                    <div style={{ flexShrink: 0 }}>
+                      <Avatar user={u} size="sm" />
+                    </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         className="flex center gap-2"
-                        style={{ flexWrap: "wrap", marginTop: 4 }}
+                        style={{ flexWrap: "wrap" }}
                       >
+                        <span style={{ fontWeight: 500, fontSize: 14 }}>
+                          {displayName(u)}
+                        </span>
                         {u.isAdmin && <Badge kind="ink">Admin</Badge>}
                         {noPm && (
                           <Badge kind="warning" dot>
                             No payment method
                           </Badge>
                         )}
-                        <div
-                          className="muted"
-                          style={{ fontSize: 12 }}
-                        >
-                          {u.email}
-                        </div>
+                      </div>
+                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                        {u.email}
+                      </div>
+                      <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                        owes {formatCurrency(totalOwed)} · owed{" "}
+                        {formatCurrency(totalReceivable)}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div
                         className="serif tnum"
                         style={{
@@ -210,12 +216,8 @@ export default function AdminPage() {
                         {net > 0 ? "+" : ""}
                         {formatCurrency(net)}
                       </div>
-                      <div
-                        className="muted"
-                        style={{ fontSize: 11, marginTop: 2 }}
-                      >
-                        owes {formatCurrency(totalOwed)} / owed{" "}
-                        {formatCurrency(totalReceivable)}
+                      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                        net
                       </div>
                     </div>
                   </div>
