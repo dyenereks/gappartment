@@ -66,188 +66,67 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <>
-          {/* Hero balance + share progress */}
-          <div className="cols-2">
-            <div className="balance-hero">
-              <div className="flex center between">
-                <span className="label">Total bills payable</span>
-                {unpaidBills.length > 0 && (
-                  <Badge kind="accent" dot>
-                    {unpaidBills.length} unpaid
-                  </Badge>
-                )}
-              </div>
-              <div className="amount">
-                <em>{formatCurrency(totalPayable)}</em>
-              </div>
-              <div className="sub">
-                Across {unpaidBills.length} of {monthBills.length} bill
-                {monthBills.length === 1 ? "" : "s"} · {formatMonth(month)}
-              </div>
-
-              <div
-                style={{
-                  marginTop: 24,
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                {unpaidBills.map((b) => {
-                  const iconName = (BILL_TYPE_ICON[b.type] ?? "receipt") as IconName;
-                  return (
-                    <Link
-                      key={b._id}
-                      href="/bills"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "10px 14px",
-                        background: "oklch(1 0 0 / 0.08)",
-                        borderRadius: 999,
-                        color: "var(--bg)",
-                        border: "1px solid oklch(1 0 0 / 0.1)",
-                      }}
-                    >
-                      <Icon name={iconName} size={14} />
-                      <span style={{ fontSize: 13 }}>
-                        {BILL_TYPE_LABELS[b.type] ?? b.type}
-                      </span>
-                      <span className="serif tnum" style={{ fontSize: 16 }}>
-                        {formatCurrency(b.amount)}
-                      </span>
-                    </Link>
-                  );
-                })}
-                {unpaidBills.length === 0 && (
-                  <div className="sub">
-                    {monthBills.length === 0
-                      ? "No bills logged for this month yet."
-                      : "All bills are fully collected this month. "}
-                  </div>
-                )}
-              </div>
+          {/* Hero balance */}
+          <div className="balance-hero">
+            <div className="flex center between">
+              <span className="label">Total bills payable</span>
+              {unpaidBills.length > 0 && (
+                <Badge kind="accent" dot>
+                  {unpaidBills.length} unpaid
+                </Badge>
+              )}
+            </div>
+            <div className="amount">
+              <em>{formatCurrency(totalPayable)}</em>
+            </div>
+            <div className="sub">
+              Across {unpaidBills.length} of {monthBills.length} bill
+              {monthBills.length === 1 ? "" : "s"} · {formatMonth(month)}
             </div>
 
-            {(() => {
-              // === Collection progress card ===
-              const mine = monthBills.flatMap((b) =>
-                b.shares.filter((s) => s.user?._id === myId)
-              );
-              const mineTotal = mine.reduce((s, x) => s + x.amount, 0);
-              const minePaid = mine
-                .filter((x) => x.isPaid)
-                .reduce((s, x) => s + x.amount, 0);
-              const minePct = mineTotal > 0 ? minePaid / mineTotal : 0;
-
-              // Right ring — money owed *to me* this month (bills I receive)
-              // and how much of it has actually been received.
-              const owedToMe = monthBills
-                .filter((b) => b.receiver?._id === myId)
-                .flatMap((b) =>
-                  b.shares.filter((s) => s.user?._id !== myId)
+            <div
+              style={{
+                marginTop: 24,
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              {unpaidBills.map((b) => {
+                const iconName = (BILL_TYPE_ICON[b.type] ?? "receipt") as IconName;
+                return (
+                  <Link
+                    key={b._id}
+                    href="/bills"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 14px",
+                      background: "oklch(1 0 0 / 0.08)",
+                      borderRadius: 999,
+                      color: "var(--bg)",
+                      border: "1px solid oklch(1 0 0 / 0.1)",
+                    }}
+                  >
+                    <Icon name={iconName} size={14} />
+                    <span style={{ fontSize: 13 }}>
+                      {BILL_TYPE_LABELS[b.type] ?? b.type}
+                    </span>
+                    <span className="serif tnum" style={{ fontSize: 16 }}>
+                      {formatCurrency(b.amount)}
+                    </span>
+                  </Link>
                 );
-              const owedTotal = owedToMe.reduce((s, x) => s + x.amount, 0);
-              const owedReceived = owedToMe
-                .filter((x) => x.isPaid)
-                .reduce((s, x) => s + x.amount, 0);
-              const owedPct = owedTotal > 0 ? owedReceived / owedTotal : 0;
-
-              return (
-                <div className="card card-lg">
-                  <div
-                    className="muted"
-                    style={{
-                      fontSize: 11,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Collection progress
-                  </div>
-                  <h2 className="card-title" style={{ marginTop: 8 }}>
-                    {minePct === 1
-                      ? "Settled up"
-                      : `${formatCurrency(mineTotal - minePaid)} to go`}
-                  </h2>
-
-                  <div className="ring-pair">
-                    <div className="ring-cell">
-                      <Ring pct={minePct} size={104} />
-                      <div className="ring-cell-label">Your share</div>
-                      <div className="ring-cell-meta tnum">
-                        {formatCurrency(minePaid)}{" "}
-                        <span className="muted">
-                          of {formatCurrency(mineTotal)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="ring-cell">
-                      <Ring pct={owedPct} size={104} accent />
-                      <div className="ring-cell-label">Owed to me received</div>
-                      <div className="ring-cell-meta tnum">
-                        {formatCurrency(owedReceived)}{" "}
-                        <span className="muted">
-                          of {formatCurrency(owedTotal)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      height: 1,
-                      background: "var(--line-soft)",
-                      margin: "16px 0",
-                    }}
-                  />
-                  <div
-                    className="muted"
-                    style={{ fontSize: 12, marginBottom: 8 }}
-                  >
-                    By bill
-                  </div>
-                  {monthBills.length === 0 ? (
-                    <div className="muted" style={{ fontSize: 13 }}>
-                      No bills logged for this month.
-                    </div>
-                  ) : (
-                    monthBills.map((b) => {
-                      const total = b.amount;
-                      const paid = b.shares
-                        .filter((s) => s.isPaid)
-                        .reduce((a, s) => a + s.amount, 0);
-                      const pct = total > 0 ? paid / total : 0;
-                      return (
-                        <div
-                          key={b._id}
-                          className="flex center between gap-3"
-                          style={{ padding: "5px 0" }}
-                        >
-                          <div style={{ minWidth: 80, fontSize: 13 }}>
-                            {BILL_TYPE_LABELS[b.type] ?? b.type}
-                          </div>
-                          <div className="bar" style={{ flex: 1 }}>
-                            <span style={{ width: `${pct * 100}%` }} />
-                          </div>
-                          <div
-                            className="tnum muted"
-                            style={{
-                              fontSize: 12,
-                              minWidth: 50,
-                              textAlign: "right",
-                            }}
-                          >
-                            {Math.round(pct * 100)}%
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+              })}
+              {unpaidBills.length === 0 && (
+                <div className="sub">
+                  {monthBills.length === 0
+                    ? "No bills logged for this month yet."
+                    : "All bills are fully collected this month. "}
                 </div>
-              );
-            })()}
+              )}
+            </div>
           </div>
 
           {/* Quick actions */}
@@ -306,6 +185,110 @@ export default function DashboardPage() {
               upcoming.slice(0, 4).map((b) => <BillRow key={b._id} bill={b} />)
             )}
           </div>
+
+          {/* Collection progress */}
+          {(() => {
+            const mine = monthBills.flatMap((b) =>
+              b.shares.filter((s) => s.user?._id === myId)
+            );
+            const mineTotal = mine.reduce((s, x) => s + x.amount, 0);
+            const minePaid = mine
+              .filter((x) => x.isPaid)
+              .reduce((s, x) => s + x.amount, 0);
+            const minePct = mineTotal > 0 ? minePaid / mineTotal : 0;
+
+            const owedToMe = monthBills
+              .filter((b) => b.receiver?._id === myId)
+              .flatMap((b) => b.shares.filter((s) => s.user?._id !== myId));
+            const owedTotal = owedToMe.reduce((s, x) => s + x.amount, 0);
+            const owedReceived = owedToMe
+              .filter((x) => x.isPaid)
+              .reduce((s, x) => s + x.amount, 0);
+            const owedPct = owedTotal > 0 ? owedReceived / owedTotal : 0;
+
+            return (
+              <div className="card card-lg" style={{ marginTop: 24 }}>
+                <div
+                  className="muted"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Collection progress
+                </div>
+                <h2 className="card-title" style={{ marginTop: 8 }}>
+                  {minePct === 1
+                    ? "Settled up"
+                    : `${formatCurrency(mineTotal - minePaid)} to go`}
+                </h2>
+
+                <div className="ring-pair">
+                  <div className="ring-cell">
+                    <Ring pct={minePct} size={104} />
+                    <div className="ring-cell-label">Your share</div>
+                    <div className="ring-cell-meta tnum">
+                      {formatCurrency(minePaid)}{" "}
+                      <span className="muted">of {formatCurrency(mineTotal)}</span>
+                    </div>
+                  </div>
+                  <div className="ring-cell">
+                    <Ring pct={owedPct} size={104} accent />
+                    <div className="ring-cell-label">Owed to me received</div>
+                    <div className="ring-cell-meta tnum">
+                      {formatCurrency(owedReceived)}{" "}
+                      <span className="muted">of {formatCurrency(owedTotal)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    height: 1,
+                    background: "var(--line-soft)",
+                    margin: "16px 0",
+                  }}
+                />
+                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                  By bill
+                </div>
+                {monthBills.length === 0 ? (
+                  <div className="muted" style={{ fontSize: 13 }}>
+                    No bills logged for this month.
+                  </div>
+                ) : (
+                  monthBills.map((b) => {
+                    const total = b.amount;
+                    const paid = b.shares
+                      .filter((s) => s.isPaid)
+                      .reduce((a, s) => a + s.amount, 0);
+                    const pct = total > 0 ? paid / total : 0;
+                    return (
+                      <div
+                        key={b._id}
+                        className="flex center between gap-3"
+                        style={{ padding: "5px 0" }}
+                      >
+                        <div style={{ minWidth: 80, fontSize: 13 }}>
+                          {BILL_TYPE_LABELS[b.type] ?? b.type}
+                        </div>
+                        <div className="bar" style={{ flex: 1 }}>
+                          <span style={{ width: `${pct * 100}%` }} />
+                        </div>
+                        <div
+                          className="tnum muted"
+                          style={{ fontSize: 12, minWidth: 50, textAlign: "right" }}
+                        >
+                          {Math.round(pct * 100)}%
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
