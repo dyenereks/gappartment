@@ -255,7 +255,15 @@ export default function DashboardPage() {
             <div className="card-head">
               <h2 className="card-title">Quick actions</h2>
             </div>
-            <div style={{ display: "grid", gap: 10 }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+                // Tile layout on desktop; auto-collapses to a single column
+                // on narrow screens since 220px > most mobile content widths.
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              }}
+            >
               <Link href="/payments" className="btn btn-outline btn-block">
                 <Icon name="wallet" size={14} /> Pay outstanding shares
               </Link>
