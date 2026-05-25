@@ -2,10 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useQuery } from "convex/react";
 import Icon, { type IconName } from "./Icon";
 import ThemeToggle from "./ThemeToggle";
-import { api } from "@/convex/_generated/api";
 
 interface MobileTabItem {
   href: string;
@@ -69,8 +67,6 @@ export function MobileTopbar() {
 
 export function MobileTabBar() {
   const pathname = usePathname();
-  const me = useQuery(api.users.current);
-  const isAdmin = me?.isAdmin ?? false;
 
   const items: MobileTabItem[] = [
     { href: "/", label: "Home", icon: "dashboard" },
@@ -79,7 +75,6 @@ export function MobileTabBar() {
     { href: "/payments", label: "Pay", icon: "payments" },
     { href: "/profile", label: "Me", icon: "profile" },
   ];
-  if (isAdmin) items.push({ href: "/admin", label: "Admin", icon: "admin" });
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);

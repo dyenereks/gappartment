@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import Image from "next/image";
+import Link from "next/link";
 import PageHead from "@/components/PageHead";
 import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
@@ -244,6 +245,44 @@ export default function ProfilePage() {
             </p>
             <PushToggle />
           </div>
+
+          {profile.isAdmin && (
+            <Link
+              href="/admin"
+              className="card card-lg"
+              style={{
+                marginTop: 16,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "16px 20px",
+                textDecoration: "none",
+                color: "var(--ink)",
+              }}
+            >
+              <div className="flex center gap-3">
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: "var(--accent-soft)",
+                    color: "var(--accent)",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Icon name="admin" size={18} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>Admin Panel</div>
+                  <div className="muted" style={{ fontSize: 12 }}>Manage tenants, bills, and balances</div>
+                </div>
+              </div>
+              <Icon name="chevron-right" size={16} />
+            </Link>
+          )}
 
           <div className="card card-lg" style={{ marginTop: 16 }}>
             <div className="card-head">
