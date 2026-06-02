@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
+import { notify } from "./_lib";
 
 export const existsForMonth = query({
   args: { billMonthCode: v.string() },
@@ -56,7 +56,7 @@ export const syncBill = mutation({
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         });
-      await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      await notify(ctx, {
         userIds: admins.map((a) => a._id),
         title: "New Leyeco Electric Bill",
         body: `${amt} · ${args.kwhUsed} kWh — ${args.month}`,

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import Icon, { type IconName } from "./Icon";
+import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 
 interface MobileTabItem {
@@ -49,6 +50,7 @@ export function MobileTopbar() {
         </div>
       </div>
       <div className="flex center gap-2">
+        <NotificationBell />
         <ThemeToggle />
         {user?.imageUrl ? (
           <span

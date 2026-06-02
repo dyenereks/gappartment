@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { api } from "./_generated/api";
-import { requireCurrentUser } from "./_lib";
+import { notify, requireCurrentUser } from "./_lib";
 
 const fmtPeso = (n: number) =>
   "₱" +
@@ -27,7 +26,7 @@ export const submitProof = mutation({
 
     const expense = await ctx.db.get(share.expenseId);
     if (expense && expense.addedById !== me._id) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      await notify(ctx, {
         userIds: [expense.addedById],
         title: "Payment received",
         body: `${me.nickname || me.name} sent proof for ${fmtPeso(share.amount)} (${expense.title})`,
@@ -62,7 +61,7 @@ export const submitProofMany = mutation({
     }
 
     for (const uid of recipients) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      await notify(ctx, {
         userIds: [uid as import("./_generated/dataModel").Id<"users">],
         title: "Payment received",
         body: `${me.nickname || me.name} sent proof totaling ${fmtPeso(totalAmount)}`,
@@ -87,7 +86,7 @@ export const confirmPayment = mutation({
       confirmedAt: Date.now(),
       confirmedById: me._id,
     });
-    await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+    await notify(ctx, {
       userIds: [share.userId],
       title: "Payment confirmed",
       body: `${me.nickname || me.name} confirmed your payment of ${fmtPeso(share.amount)} (${expense.title})`,
@@ -109,7 +108,7 @@ export const rejectPayment = mutation({
       proofUrl: null,
       paidAt: null,
     });
-    await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+    await notify(ctx, {
       userIds: [share.userId],
       title: "Payment rejected",
       body: `${me.nickname || me.name} rejected your proof for ${fmtPeso(share.amount)} (${expense.title}) — please re-upload`,

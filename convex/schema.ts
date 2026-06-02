@@ -37,6 +37,20 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_endpoint", ["endpoint"]),
 
+  // In-app notification inbox. Persisted independently of push so users who
+  // haven't enabled (or whose browser doesn't support) push still see every
+  // event. _creationTime acts as our timestamp; no extra createdAt needed.
+  notifications: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    body: v.string(),
+    url: v.optional(v.union(v.string(), v.null())),
+    isRead: v.boolean(),
+  })
+    .index("by_user", ["userId"])
+    // Compound index lets unreadCount + markAllRead scan only unread rows.
+    .index("by_user_and_read", ["userId", "isRead"]),
+
   bills: defineTable({
     type: v.string(), // RENT | ELECTRIC | WATER
     amount: v.number(),

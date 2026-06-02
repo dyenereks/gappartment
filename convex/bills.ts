@@ -1,8 +1,7 @@
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, QueryCtx } from "./_generated/server";
-import { api } from "./_generated/api";
-import { getCurrentUser, requireAdmin } from "./_lib";
+import { getCurrentUser, notify, requireAdmin } from "./_lib";
 
 const BILL_TYPE_PRETTY: Record<string, string> = {
   RENT: "Rent",
@@ -135,7 +134,7 @@ export const create = mutation({
       .map((s) => s.userId)
       .filter((uid) => uid !== admin._id);
     if (recipients.length > 0) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      await notify(ctx, {
         userIds: recipients,
         title: `New ${BILL_TYPE_PRETTY[args.type] ?? args.type} bill`,
         body: `${fmtPeso(args.amount)} for ${args.month}`,

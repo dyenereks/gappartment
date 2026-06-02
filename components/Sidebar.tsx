@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
 import Icon, { type IconName } from "./Icon";
+import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
 import { api } from "@/convex/_generated/api";
 import { displayName, initials, tenantColor, getCurrentMonth } from "@/lib/utils";
@@ -108,6 +109,7 @@ export default function Sidebar() {
             </div>
           </div>
         </button>
+        <NotificationBell />
         <button
           type="button"
           className="theme-toggle"

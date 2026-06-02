@@ -1,8 +1,7 @@
 import { v } from "convex/values";
 import { Doc } from "./_generated/dataModel";
 import { mutation, query, QueryCtx } from "./_generated/server";
-import { api } from "./_generated/api";
-import { getCurrentUser, requireAdmin, requireCurrentUser } from "./_lib";
+import { getCurrentUser, notify, requireAdmin, requireCurrentUser } from "./_lib";
 
 const fmtPeso = (n: number) =>
   "₱" +
@@ -106,7 +105,7 @@ export const create = mutation({
       .map((s) => s.userId)
       .filter((uid) => uid !== me._id);
     if (recipients.length > 0) {
-      await ctx.scheduler.runAfter(0, api.notifications.sendToUsers, {
+      await notify(ctx, {
         userIds: recipients,
         title: "New shared expense",
         body: `${args.title} — ${fmtPeso(args.amount)}`,
