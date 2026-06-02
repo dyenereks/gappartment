@@ -224,19 +224,21 @@ a { color: inherit; text-decoration: none; }
   line-height: 1;
 }
 .bell-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 360px;
-  max-width: calc(100vw - 32px);
+  /* Positioned via JS (fixed) so it stays on-screen from both the desktop
+     sidebar foot and the mobile topbar. left/top/bottom/width/max-height are
+     all set inline. */
+  position: fixed;
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 14px;
   box-shadow: var(--shadow-pop);
-  z-index: 100;
+  z-index: 1000;
   overflow: hidden;
 }
 .bell-panel-head {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px;
   border-bottom: 1px solid var(--line-soft);
@@ -248,7 +250,8 @@ a { color: inherit; text-decoration: none; }
 }
 .bell-mark-all:hover { text-decoration: underline; }
 .bell-panel-body {
-  max-height: min(440px, 60vh);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .bell-empty {
