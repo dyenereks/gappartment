@@ -67,6 +67,10 @@ function LeyecoBillRow({ bill }: { bill: Doc<"leyecoBills"> }) {
 
 export default function AdminPage() {
   const [month, setMonth] = useState(getCurrentMonth());
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(
+    null
+  );
 
   const me = useQuery(api.users.current);
   const users = useQuery(api.users.list);
@@ -104,6 +108,35 @@ export default function AdminPage() {
       </div>
     );
   }
+
+  const runSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      // Same-origin GET — the route reads our Clerk session to authorize.
+      // syncBill fires the admin notification (in-app + push) on a new bill;
+      // the leyecoBills list below updates reactively, no refetch needed.
+      const res = await fetch("/api/leyeco/sync");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setSyncMsg({
+          ok: false,
+          text: data?.message || `Sync failed (${res.status})`,
+        });
+      } else if (data?.isNew) {
+        setSyncMsg({ ok: true, text: "New bill imported — admins notified." });
+      } else {
+        setSyncMsg({
+          ok: true,
+          text: data?.message || "Already up to date.",
+        });
+      }
+    } catch {
+      setSyncMsg({ ok: false, text: "Couldn't reach the sync endpoint." });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const getUserBalance = (userId: Id<"users">) => {
     const billsOwed = (bills ?? [])
@@ -213,9 +246,38 @@ export default function AdminPage() {
           {/* Leyeco electric bills */}
           <div className="card card-lg" style={{ marginTop: 24 }}>
             <div className="card-head">
-              <h2 className="card-title">Leyeco Electric Bills</h2>
-              <div className="card-sub">Synced from Leyeco2 · hit /api/leyeco/sync to refresh</div>
+              <div>
+                <h2 className="card-title">Leyeco Electric Bills</h2>
+                <div className="card-sub">
+                  Synced from Leyeco2 · admins are notified when a new bill lands
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={runSync}
+                disabled={syncing}
+              >
+                <Icon name="refresh" size={14} />
+                {syncing ? "Syncing…" : "Sync now"}
+              </button>
             </div>
+            {syncMsg && (
+              <div
+                style={{
+                  fontSize: 13,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  marginBottom: 12,
+                  background: syncMsg.ok
+                    ? "var(--success-soft)"
+                    : "var(--danger-soft)",
+                  color: syncMsg.ok ? "var(--success)" : "var(--danger)",
+                }}
+              >
+                {syncMsg.text}
+              </div>
+            )}
             {leyecoBills!.length === 0 ? (
               <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
                 No Leyeco bills imported yet.

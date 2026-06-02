@@ -11,7 +11,7 @@ export type IconName =
   | "trash" | "edit" | "calendar" | "bell" | "search" | "filter" | "send"
   | "wave" | "trend-up" | "trend-down" | "more" | "user-plus" | "receipt"
   | "menu" | "phone" | "mail" | "shield" | "tag" | "clock" | "wallet" | "users"
-  | "upload" | "download" | "copy" | "x-circle";
+  | "upload" | "download" | "copy" | "x-circle" | "refresh";
 
 interface IconProps {
   name: IconName;
@@ -199,6 +199,13 @@ export default function Icon({
         <svg {...common}>
           <path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8z" />
           <path d="M10 21a2 2 0 0 0 4 0" />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg {...common}>
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <path d="M21 3v5h-5" />
         </svg>
       );
     case "search":

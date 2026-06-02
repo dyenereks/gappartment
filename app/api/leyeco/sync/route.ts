@@ -1,7 +1,11 @@
+import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Reads the Clerk session + hits an external API — never static.
+export const dynamic = "force-dynamic";
 
 interface LeyecoApiBill {
   billMonthCode: string;
@@ -14,11 +18,27 @@ interface LeyecoApiBill {
 }
 
 export async function GET(request: Request) {
+  // Two authorized callers:
+  //  1. Cron / GitHub Action — sends `Authorization: Bearer <LEYECO_SYNC_SECRET>`.
+  //  2. A signed-in admin clicking "Sync now" in the app — same-origin request
+  //     carrying their Clerk session cookie (no bearer header).
   const secret = process.env.LEYECO_SYNC_SECRET;
-  if (secret) {
-    const auth = request.headers.get("Authorization");
-    if (auth !== `Bearer ${secret}`) {
+  const authHeader = request.headers.get("Authorization");
+  const viaSecret = !!secret && authHeader === `Bearer ${secret}`;
+
+  if (!viaSecret) {
+    const { userId, getToken } = await auth();
+    if (!userId) {
       return new Response("Unauthorized", { status: 401 });
+    }
+    // Verify the caller is an admin via Convex (uses their Clerk JWT). A
+    // dedicated client so we don't leave auth set on the shared instance.
+    const token = await getToken({ template: "convex" });
+    const authedConvex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    if (token) authedConvex.setAuth(token);
+    const me = await authedConvex.query(api.users.current);
+    if (!me?.isAdmin) {
+      return new Response("Forbidden — admin only", { status: 403 });
     }
   }
 
