@@ -15,6 +15,16 @@ interface LeyecoApiBill {
   kwhUsed: number;
   amount: number;
   status: string;
+  // Service period the bill covers — scopes the AC energy split window.
+  serviceDateFrom?: string;
+  serviceDateTo?: string;
+}
+
+// Parse an ISO/date string to epoch ms, or null if absent/invalid.
+function parseDate(s?: string): number | null {
+  if (!s) return null;
+  const t = new Date(s).getTime();
+  return Number.isNaN(t) ? null : t;
 }
 
 export async function GET(request: Request) {
@@ -89,6 +99,8 @@ export async function GET(request: Request) {
     kwhUsed: currentBill.kwhUsed,
     status: currentBill.status,
     billNumber: currentBill.billNumber,
+    serviceDateFrom: parseDate(currentBill.serviceDateFrom),
+    serviceDateTo: parseDate(currentBill.serviceDateTo),
   });
 
   return Response.json({ ok: true, ...result });

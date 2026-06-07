@@ -70,3 +70,74 @@ export const latestPerDevice = query({
     return Array.from(seen.values());
   },
 });
+
+/**
+ * Daily AC energy consumption over the last `days` (default 14, max 90).
+ *
+ * `energyKwh` is a cumulative meter counter, so per-interval consumption is the
+ * delta between consecutive hourly readings of a device. Deltas are summed per
+ * device and bucketed by Philippine calendar day (UTC+8). Returns a continuous
+ * series (zero-filled for days with no readings) plus the period total and the
+ * most recent rate, so the admin chart can render and estimate cost.
+ */
+export const dailyAcEnergy = query({
+  args: { days: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const me = await getCurrentUser(ctx);
+    if (!me) return { points: [], totalKwh: 0, ratePerKwh: 0 };
+
+    const days = Math.min(Math.max(Math.round(args.days ?? 14), 1), 90);
+    const now = Date.now();
+    const from = now - days * 86400000;
+
+    const readings = await ctx.db
+      .query("energyReadings")
+      .withIndex("by_reportedAt", (q) => q.gte("reportedAt", from))
+      .collect();
+
+    const PH_OFFSET = 8 * 3600 * 1000;
+    const phDay = (ms: number) =>
+      new Date(ms + PH_OFFSET).toISOString().slice(0, 10);
+
+    // Group by device + track the most recent rate seen.
+    const byDevice = new Map<string, typeof readings>();
+    let ratePerKwh = 0;
+    let rateAt = 0;
+    for (const r of readings) {
+      const arr = byDevice.get(r.deviceId);
+      if (arr) arr.push(r);
+      else byDevice.set(r.deviceId, [r]);
+      if (r.reportedAt >= rateAt) {
+        rateAt = r.reportedAt;
+        ratePerKwh = r.ratePerKwh;
+      }
+    }
+
+    // Sum cumulative-counter deltas into PH-day buckets.
+    const dayTotals = new Map<string, number>();
+    for (const rows of byDevice.values()) {
+      rows.sort((a, b) => a.reportedAt - b.reportedAt);
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1];
+        const cur = rows[i];
+        if (prev.energyKwh == null || cur.energyKwh == null) continue;
+        let delta = cur.energyKwh - prev.energyKwh;
+        if (delta < 0) delta = 0; // counter reset between readings — ignore the dip
+        const day = phDay(cur.reportedAt);
+        dayTotals.set(day, (dayTotals.get(day) ?? 0) + delta);
+      }
+    }
+
+    const round = (n: number) => Math.round(n * 1000) / 1000;
+    const points: { day: string; kwh: number }[] = [];
+    let totalKwh = 0;
+    for (let i = days - 1; i >= 0; i--) {
+      const day = phDay(now - i * 86400000);
+      const kwh = round(dayTotals.get(day) ?? 0);
+      points.push({ day, kwh });
+      totalKwh += kwh;
+    }
+
+    return { points, totalKwh: round(totalKwh), ratePerKwh };
+  },
+});

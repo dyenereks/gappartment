@@ -7,6 +7,7 @@ import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
 import Icon from "@/components/Icon";
 import BillRow from "@/components/BillRow";
+import EnergyBarChart from "@/components/EnergyBarChart";
 import {
   displayName,
   formatCurrency,
@@ -154,6 +155,11 @@ function LeyecoBillRow({ bill }: { bill: Doc<"leyecoBills"> }) {
         <div className="row-meta">
           Bill date {formatDate(bill.billDate)} · Due {formatDate(bill.dueDate)} · {bill.kwhUsed} kWh
         </div>
+        {bill.serviceDateFrom != null && bill.serviceDateTo != null && (
+          <div className="row-meta" style={{ marginTop: 2 }}>
+            Service {formatDate(bill.serviceDateFrom)} – {formatDate(bill.serviceDateTo)}
+          </div>
+        )}
         <div className="row-meta" style={{ marginTop: 2 }}>
           Bill #{bill.billNumber}
         </div>
@@ -193,6 +199,7 @@ export default function AdminPage() {
   const expenses = useQuery(api.expenses.listByMonth, { month });
   const leyecoBills = useQuery(api.leyecoBills.list);
   const liveEnergy = useQuery(api.energyReadings.latestPerDevice);
+  const dailyAc = useQuery(api.energyReadings.dailyAcEnergy, { days: 14 });
 
   const loading =
     me === undefined ||
@@ -399,6 +406,44 @@ export default function AdminPage() {
               </div>
             ) : (
               liveEnergy.map((d) => <EnergyDeviceRow key={d.deviceId} d={d} />)
+            )}
+          </div>
+
+          {/* Daily AC energy */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <div>
+                <h2 className="card-title">Daily AC energy</h2>
+                <div className="card-sub">
+                  Last 14 days · hourly readings from the Pi
+                </div>
+              </div>
+              {dailyAc && dailyAc.totalKwh > 0 && (
+                <div style={{ textAlign: "right" }}>
+                  <div className="serif tnum" style={{ fontSize: 20 }}>
+                    {metricNum(dailyAc.totalKwh, 1)} kWh
+                  </div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {dailyAc.ratePerKwh > 0
+                      ? `≈ ${formatCurrency(dailyAc.totalKwh * dailyAc.ratePerKwh)} total`
+                      : "14-day total"}
+                  </div>
+                </div>
+              )}
+            </div>
+            {dailyAc === undefined ? (
+              <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
+                Loading…
+              </div>
+            ) : dailyAc.totalKwh === 0 ? (
+              <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
+                No AC energy recorded in the last 14 days yet.
+              </div>
+            ) : (
+              <EnergyBarChart
+                points={dailyAc.points}
+                ratePerKwh={dailyAc.ratePerKwh}
+              />
             )}
           </div>
 

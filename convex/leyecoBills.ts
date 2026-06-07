@@ -33,6 +33,8 @@ export const syncBill = mutation({
     kwhUsed: v.number(),
     status: v.string(),
     billNumber: v.string(),
+    serviceDateFrom: v.optional(v.union(v.number(), v.null())),
+    serviceDateTo: v.optional(v.union(v.number(), v.null())),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db

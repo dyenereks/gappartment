@@ -114,6 +114,11 @@ export default defineSchema({
     kwhUsed: v.number(),
     status: v.string(),        // "PAID" | "UNPAID"
     billNumber: v.string(),
+    // Service period the bill covers (epoch ms). Defines the window over which
+    // the AC energy split is computed from energyReadings. Optional/nullable
+    // for rows synced before this was captured.
+    serviceDateFrom: v.optional(v.union(v.number(), v.null())),
+    serviceDateTo: v.optional(v.union(v.number(), v.null())),
   }).index("by_billMonthCode", ["billMonthCode"]),
 
   expenses: defineTable({
