@@ -81,6 +81,29 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_bill_and_user", ["billId", "userId"]),
 
+  // Telemetry from local smart plugs (e.g. aircon energy meters). One row per
+  // device per report — the local device POSTs a batch to /api/energy/ingest
+  // on an interval. reportedAt is the batch time; deviceTimestamp is the
+  // per-device reading time (usually equal). Electrical fields are nullable so
+  // an offline plug that omits readings still records a row.
+  energyReadings: defineTable({
+    deviceId: v.string(),
+    deviceName: v.string(),
+    online: v.boolean(),
+    switch1: v.union(v.boolean(), v.null()),
+    switch2: v.union(v.boolean(), v.null()),
+    powerW: v.union(v.number(), v.null()),
+    voltageV: v.union(v.number(), v.null()),
+    currentA: v.union(v.number(), v.null()),
+    energyKwh: v.union(v.number(), v.null()),
+    ratePerKwh: v.number(),
+    reportedAt: v.number(), // epoch ms (batch)
+    deviceTimestamp: v.number(), // epoch ms (per-device)
+  })
+    .index("by_device", ["deviceId"])
+    .index("by_reportedAt", ["reportedAt"])
+    .index("by_device_and_time", ["deviceId", "reportedAt"]),
+
   leyecoBills: defineTable({
     billMonthCode: v.string(), // "202605" — dedup key
     month: v.string(),         // "2026-05"

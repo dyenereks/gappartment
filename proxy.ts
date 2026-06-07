@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/api/webhooks/clerk",
   "/api/leyeco/sync",
+  "/api/energy/ingest",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

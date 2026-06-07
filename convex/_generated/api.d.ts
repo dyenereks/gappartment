@@ -11,6 +11,7 @@
 import type * as _lib from "../_lib.js";
 import type * as billShares from "../billShares.js";
 import type * as bills from "../bills.js";
+import type * as energyReadings from "../energyReadings.js";
 import type * as expenseShares from "../expenseShares.js";
 import type * as expenses from "../expenses.js";
 import type * as inAppNotifications from "../inAppNotifications.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   _lib: typeof _lib;
   billShares: typeof billShares;
   bills: typeof bills;
+  energyReadings: typeof energyReadings;
   expenseShares: typeof expenseShares;
   expenses: typeof expenses;
   inAppNotifications: typeof inAppNotifications;
