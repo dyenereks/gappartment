@@ -13,9 +13,124 @@ import {
   formatDate,
   formatMonth,
   getCurrentMonth,
+  relTime,
 } from "@/lib/utils";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+
+// Fixed-decimal formatter for live electrical metrics (handles nulls).
+const metricNum = (n: number | null, digits: number) =>
+  n === null || n === undefined
+    ? "—"
+    : n.toLocaleString("en-PH", {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+      });
+
+function SwitchChip({ label, on }: { label: string; on: boolean }) {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        padding: "3px 8px",
+        borderRadius: 999,
+        border: "1px solid var(--line-soft)",
+        background: on ? "var(--success-soft)" : "var(--bg-2)",
+        color: on ? "var(--success)" : "var(--ink-faint)",
+      }}
+    >
+      {label}: {on ? "On" : "Off"}
+    </span>
+  );
+}
+
+function EnergyDeviceRow({ d }: { d: Doc<"energyReadings"> }) {
+  const cost = d.energyKwh != null ? d.energyKwh * d.ratePerKwh : null;
+  const metrics = [
+    { label: "Power", value: d.powerW != null ? `${metricNum(d.powerW, 0)} W` : "—" },
+    { label: "Voltage", value: d.voltageV != null ? `${metricNum(d.voltageV, 1)} V` : "—" },
+    { label: "Current", value: d.currentA != null ? `${metricNum(d.currentA, 2)} A` : "—" },
+    { label: "Energy", value: d.energyKwh != null ? `${metricNum(d.energyKwh, 2)} kWh` : "—" },
+  ];
+
+  return (
+    <div style={{ padding: "14px 0", borderTop: "1px solid var(--line-soft)" }}>
+      <div className="flex center between" style={{ gap: 10 }}>
+        <div className="flex center gap-2" style={{ minWidth: 0 }}>
+          <div
+            className="row-icon"
+            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+          >
+            <Icon name="bolt" size={16} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div
+              className="row-title"
+              style={{
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {d.deviceName}
+            </div>
+            <div className="row-meta">Updated {relTime(d.reportedAt)}</div>
+          </div>
+        </div>
+        <Badge kind={d.online ? "success" : "warning"} dot>
+          {d.online ? "Online" : "Offline"}
+        </Badge>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+          gap: 10,
+          marginTop: 12,
+        }}
+      >
+        {metrics.map((m) => (
+          <div
+            key={m.label}
+            style={{ background: "var(--bg-2)", borderRadius: 10, padding: "8px 10px" }}
+          >
+            <div
+              className="muted"
+              style={{
+                fontSize: 10,
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              {m.label}
+            </div>
+            <div className="serif tnum" style={{ fontSize: 16, marginTop: 2 }}>
+              {m.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {(d.switch1 != null || d.switch2 != null || cost != null) && (
+        <div
+          className="flex center between"
+          style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}
+        >
+          <div className="flex center gap-2" style={{ flexWrap: "wrap" }}>
+            {d.switch1 != null && <SwitchChip label="Switch 1" on={d.switch1} />}
+            {d.switch2 != null && <SwitchChip label="Switch 2" on={d.switch2} />}
+          </div>
+          {cost != null && (
+            <div className="muted" style={{ fontSize: 12 }}>
+              ≈ {formatCurrency(cost)} @ {formatCurrency(d.ratePerKwh)}/kWh
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LeyecoBillRow({ bill }: { bill: Doc<"leyecoBills"> }) {
   const [copied, setCopied] = useState(false);
@@ -77,6 +192,7 @@ export default function AdminPage() {
   const bills = useQuery(api.bills.listByMonth, { month });
   const expenses = useQuery(api.expenses.listByMonth, { month });
   const leyecoBills = useQuery(api.leyecoBills.list);
+  const liveEnergy = useQuery(api.energyReadings.latestPerDevice);
 
   const loading =
     me === undefined ||
@@ -241,6 +357,49 @@ export default function AdminPage() {
               </div>
               <div className="stat-meta">{formatMonth(month)}</div>
             </div>
+          </div>
+
+          {/* Live energy */}
+          <div className="card card-lg" style={{ marginTop: 24 }}>
+            <div className="card-head">
+              <div>
+                <h2 className="card-title">Live energy</h2>
+                <div className="card-sub">
+                  {liveEnergy && liveEnergy.length > 0
+                    ? `${liveEnergy.length} device${liveEnergy.length === 1 ? "" : "s"} reporting`
+                    : "Pushed from local smart plugs"}
+                </div>
+              </div>
+              {liveEnergy && liveEnergy.length > 0 && (
+                <div style={{ textAlign: "right" }}>
+                  <div className="serif tnum" style={{ fontSize: 20 }}>
+                    {metricNum(
+                      liveEnergy.reduce(
+                        (s, d) => s + (d.online && d.powerW != null ? d.powerW : 0),
+                        0
+                      ),
+                      0
+                    )}{" "}
+                    W
+                  </div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    drawing now
+                  </div>
+                </div>
+              )}
+            </div>
+            {liveEnergy === undefined ? (
+              <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
+                Loading…
+              </div>
+            ) : liveEnergy.length === 0 ? (
+              <div className="muted" style={{ padding: "24px 0", textAlign: "center" }}>
+                No energy readings yet. Point your device at POST
+                /api/energy/ingest.
+              </div>
+            ) : (
+              liveEnergy.map((d) => <EnergyDeviceRow key={d.deviceId} d={d} />)
+            )}
           </div>
 
           {/* Leyeco electric bills */}

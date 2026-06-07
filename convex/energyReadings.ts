@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireCurrentUser } from "./_lib";
+import { getCurrentUser } from "./_lib";
 
 // Validator for a single mapped device reading. The route normalises the
 // device's snake_case + ISO-string payload into this camelCase + epoch-ms
@@ -50,7 +50,10 @@ export const ingest = mutation({
 export const latestPerDevice = query({
   args: {},
   handler: async (ctx) => {
-    await requireCurrentUser(ctx);
+    // Fail-soft (like users.list) so the query doesn't throw during the brief
+    // window before the Clerk user is mirrored into Convex.
+    const me = await getCurrentUser(ctx);
+    if (!me) return [];
     // Pull a recent window and reduce to the newest row per device. The table
     // is small (a few plugs reporting periodically), so scanning the tail is
     // cheap and avoids a per-device index round-trip.
