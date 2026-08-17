@@ -9,7 +9,6 @@ import Icon from "@/components/Icon";
 import AddExpenseModal from "@/components/AddExpenseModal";
 import EditExpenseModal from "@/components/EditExpenseModal";
 import {
-  displayName,
   formatCurrency,
   formatLongDate,
   formatMonth,
@@ -56,86 +55,31 @@ export default function ExpensesPage() {
         }
       />
 
-      <div className="cols-2">
-        <div className="card card-lg">
-          <div className="card-head">
-            <div>
-              <div
-                className="muted"
-                style={{
-                  fontSize: 11,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Total this month
-              </div>
-              <div
-                className="serif tnum"
-                style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}
-              >
-                {formatCurrency(total)}
-              </div>
-              <div className="muted" style={{ marginTop: 8 }}>
-                {expenses?.length ?? 0} expense
-                {(expenses?.length ?? 0) === 1 ? "" : "s"} ·{" "}
-                {formatCurrency(perPerson)} per person on average
-              </div>
+      <div className="card card-lg">
+        <div className="card-head">
+          <div>
+            <div
+              className="muted"
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+              }}
+            >
+              Total this month
+            </div>
+            <div
+              className="serif tnum"
+              style={{ fontSize: 48, lineHeight: 1, marginTop: 8 }}
+            >
+              {formatCurrency(total)}
+            </div>
+            <div className="muted" style={{ marginTop: 8 }}>
+              {expenses?.length ?? 0} expense
+              {(expenses?.length ?? 0) === 1 ? "" : "s"} ·{" "}
+              {formatCurrency(perPerson)} per person on average
             </div>
           </div>
-        </div>
-
-        <div className="card card-lg">
-          <div className="card-head">
-            <h2 className="card-title">By roommate</h2>
-          </div>
-          {(users ?? []).map((u) => {
-            const paid = (expenses ?? [])
-              .filter((e) => e.addedBy?._id === u._id)
-              .reduce((s, e) => s + e.amount, 0);
-            const owedShare = (expenses ?? [])
-              .flatMap((e) => e.shares.filter((s) => s.user?._id === u._id))
-              .reduce((s, x) => s + x.amount, 0);
-            const net = paid - owedShare;
-            return (
-              <div
-                key={u._id}
-                className="flex center between"
-                style={{
-                  padding: "12px 0",
-                  borderBottom: "1px solid var(--line-soft)",
-                }}
-              >
-                <div className="flex center gap-3">
-                  <Avatar user={u} size="sm" />
-                  <div style={{ fontSize: 13 }}>{displayName(u).split(" ")[0]}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div
-                    className="tnum"
-                    style={{ fontSize: 13, fontWeight: 500 }}
-                  >
-                    {formatCurrency(paid)}
-                  </div>
-                  <div
-                    className="tnum"
-                    style={{
-                      fontSize: 11,
-                      color:
-                        net > 0
-                          ? "var(--success)"
-                          : net < 0
-                            ? "var(--danger)"
-                            : "var(--ink-faint)",
-                    }}
-                  >
-                    {net > 0 ? "+" : ""}
-                    {formatCurrency(net)} net
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
       </div>
 

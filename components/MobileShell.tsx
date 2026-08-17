@@ -14,9 +14,7 @@ interface MobileTabItem {
 
 const TITLE_BY_PATH: Record<string, string> = {
   "/": "Dashboard",
-  "/bills": "Bills",
   "/expenses": "Expenses",
-  "/payments": "Payments",
   "/profile": "Profile",
   "/admin": "Admin",
 };
@@ -72,9 +70,7 @@ export function MobileTabBar() {
 
   const items: MobileTabItem[] = [
     { href: "/", label: "Home", icon: "dashboard" },
-    { href: "/bills", label: "Bills", icon: "bills" },
     { href: "/expenses", label: "Expenses", icon: "expenses" },
-    { href: "/payments", label: "Pay", icon: "payments" },
     { href: "/profile", label: "Me", icon: "profile" },
   ];
 

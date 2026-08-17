@@ -38,10 +38,8 @@ export default function Sidebar() {
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   const items: NavItem[] = [
-    { href: "/", label: "Dashboard", icon: "dashboard" },
-    { href: "/bills", label: "Bills", icon: "bills", badge: unpaidCount },
+    { href: "/", label: "Dashboard", icon: "dashboard", badge: unpaidCount },
     { href: "/expenses", label: "Expenses", icon: "expenses" },
-    { href: "/payments", label: "Payments", icon: "payments" },
     { href: "/profile", label: "Profile", icon: "profile" },
   ];
   if (me?.isAdmin) {
